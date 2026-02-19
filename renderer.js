@@ -2865,34 +2865,50 @@ async function showShareFolderModal(folderId) {
   }
 
   modal.innerHTML = `
-    <div class="modal-box" style="max-width: 520px;">
+    <div class="share-modal-backdrop" style="position:absolute;inset:0;cursor:pointer;" aria-label="Close"></div>
+    <div class="modal-box share-modal-content" style="max-width: 520px; position:relative; z-index:1; pointer-events:auto;">
       <h3 style="margin-top:0; margin-bottom:16px;">Share "${folder.name}"</h3>
 
       <div style="margin-bottom:16px;">
-        <label style="font-size:0.85em; opacity:0.7; display:block; margin-bottom:6px;">Invite by email</label>
-        <div style="display:flex; gap:8px;">
-          <input id="share-email-input" type="email" placeholder="user@example.com" style="flex:1; padding:8px 12px;">
-          <select id="share-role-select" style="padding:8px 10px; border-radius:8px;">
+        <label style="font-size:0.9em; opacity:0.8; display:block; margin-bottom:8px;">Invite by email</label>
+        <input id="share-email-input" type="email" placeholder="user@example.com" style="width:100%; padding:12px 14px; font-size:1em; box-sizing:border-box; margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="share-role-select" style="padding:10px 12px; border-radius:8px; font-size:0.95em;">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>
-          <button id="share-invite-btn" style="background:var(--success-color); white-space:nowrap;">Invite</button>
+          <button id="share-invite-btn" style="background:var(--success-color); white-space:nowrap; padding:10px 18px;">Invite</button>
         </div>
-        <div id="share-error" style="color:var(--danger-color); font-size:0.82em; margin-top:6px; display:none;"></div>
+        <div id="share-error" style="color:var(--danger-color); font-size:0.82em; margin-top:8px; display:none;"></div>
       </div>
 
       <div style="margin-bottom:16px;">
-        <label style="font-size:0.85em; opacity:0.7; display:block; margin-bottom:6px;">Current collaborators</label>
+        <label style="font-size:0.9em; opacity:0.8; display:block; margin-bottom:8px;">Current collaborators</label>
         <div id="collab-list">${renderCollabList()}</div>
       </div>
 
       <div style="display:flex; justify-content:flex-end;">
-        <button id="share-close-btn" style="background:var(--border-color); color:var(--text-color);">Close</button>
+        <button id="share-close-btn" style="background:var(--border-color); color:var(--text-color); padding:10px 20px;">Close</button>
       </div>
     </div>
   `;
 
   document.body.appendChild(modal);
+
+  const emailInput = document.getElementById("share-email-input");
+  const backdrop = modal.querySelector(".share-modal-backdrop");
+  const modalContent = modal.querySelector(".share-modal-content");
+
+  backdrop.onclick = () => modal.remove();
+
+  if (modalContent) {
+    modalContent.addEventListener("click", (e) => e.stopPropagation());
+    modalContent.addEventListener("mousedown", (e) => e.stopPropagation());
+  }
+
+  if (emailInput) {
+    emailInput.focus();
+  }
 
   function refreshCollabList() {
     const listEl = document.getElementById("collab-list");
@@ -2955,7 +2971,9 @@ async function showShareFolderModal(folderId) {
   };
 
   document.getElementById("share-close-btn").onclick = () => modal.remove();
-  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal || e.target === backdrop) modal.remove();
+  });
 }
 
 // ---------------- ORDERS PAGE (FOLDER VIEW) ----------------
