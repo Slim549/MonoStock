@@ -10,6 +10,19 @@ router.post('/:orderId', async (req, res) => {
     const order = await store.getById('orders', req.params.orderId);
     if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
 
+    if (req.user) {
+      const row = await store.getRowById('orders', req.params.orderId);
+      if (row && row.user_id !== req.user.id) {
+        if (order.folderId) {
+          const { checkFolderAccess } = require('../middleware/auth');
+          const role = await checkFolderAccess(req.user.id, order.folderId);
+          if (!role) return res.status(403).json({ success: false, error: 'Access denied' });
+        } else {
+          return res.status(403).json({ success: false, error: 'Access denied' });
+        }
+      }
+    }
+
     if (!order.budget) {
       return res.status(400).json({ success: false, error: 'Order has no budget — create a budget first' });
     }

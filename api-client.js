@@ -406,6 +406,40 @@
     });
   }
 
+  // ── Collaboration API ──
+
+  async function getFolderCollaborators(folderId) {
+    return apiJSON(`/api/folders/${folderId}/collaborators`);
+  }
+
+  async function addCollaborator(folderId, email, role) {
+    return apiJSON(`/api/folders/${folderId}/collaborators`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role })
+    });
+  }
+
+  async function updateCollaboratorRole(folderId, userId, role) {
+    return apiJSON(`/api/folders/${folderId}/collaborators/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role })
+    });
+  }
+
+  async function removeCollaborator(folderId, userId) {
+    return apiJSON(`/api/folders/${folderId}/collaborators/${userId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async function getSharedFolders() {
+    return apiJSON('/api/folders/shared');
+  }
+
+  async function searchUsers(query) {
+    return apiJSON(`/api/folders/users/search?q=${encodeURIComponent(query)}`);
+  }
+
   // ══════════════════════════════════════════════════════════════
   // Expose window.dashboardAPI
   // ══════════════════════════════════════════════════════════════
@@ -459,6 +493,14 @@
     duplicateOrder,
     saveBudget,
     checkInventory,
+
+    // ── Collaboration ──
+    getFolderCollaborators,
+    addCollaborator,
+    updateCollaboratorRole,
+    removeCollaborator,
+    getSharedFolders,
+    searchUsers,
 
     // ── Auth ──
     authRegister,

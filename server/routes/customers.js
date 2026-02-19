@@ -3,10 +3,11 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const store = require('../data/store');
 const { validateCustomer } = require('../services/validation');
+const { requireAuth } = require('../middleware/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    let customers = await store.getAll('customers');
+    let customers = await store.getAll('customers', req.user.id);
     const { search } = req.query;
 
     if (search) {
@@ -23,7 +24,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const input = req.body;
 
@@ -42,7 +43,7 @@ router.post('/', async (req, res) => {
       shipTo: (input.shipTo || '').trim()
     };
 
-    await store.upsertRow('customers', customer.id, customer);
+    await store.upsertRow('customers', customer.id, customer, req.user.id);
 
     res.status(201).json({ success: true, customer });
   } catch (err) {
@@ -51,10 +52,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const existing = await store.getById('customers', req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Customer not found' });
+
+    const row = await store.getRowById('customers', req.params.id);
+    if (row.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
 
     const validation = validateCustomer(req.body);
     if (!validation.valid) {
@@ -62,7 +68,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const updated = { ...existing, ...req.body, id: req.params.id };
-    await store.upsertRow('customers', updated.id, updated);
+    await store.upsertRow('customers', updated.id, updated, req.user.id);
 
     res.json({ success: true, customer: updated });
   } catch (err) {
@@ -71,10 +77,15 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const existing = await store.getById('customers', req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Customer not found' });
+
+    const row = await store.getRowById('customers', req.params.id);
+    if (row.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
 
     await store.deleteRow('customers', req.params.id);
     res.json({ success: true });

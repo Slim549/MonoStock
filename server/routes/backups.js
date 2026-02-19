@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const store = require('../data/store');
+const { requireAuth } = require('../middleware/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
     const backups = await store.listBackups();
     res.json({ success: true, backups });
@@ -12,9 +13,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const result = await store.createBackup();
+    const result = await store.createBackup(req.user.id);
     if (result) {
       res.json({ success: true });
     } else {
@@ -26,7 +27,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/restore', async (req, res) => {
+router.post('/restore', requireAuth, async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ success: false, error: 'Backup name required' });
@@ -39,7 +40,7 @@ router.post('/restore', async (req, res) => {
   }
 });
 
-router.get('/download/:name', async (req, res) => {
+router.get('/download/:name', requireAuth, async (req, res) => {
   try {
     const data = await store.getBackupData(req.params.name);
     if (!data) return res.status(404).json({ success: false, error: 'Backup not found' });

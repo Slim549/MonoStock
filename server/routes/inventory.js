@@ -3,10 +3,11 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const store = require('../data/store');
 const { validateInventoryItem, checkInventoryAvailability } = require('../services/validation');
+const { requireAuth } = require('../middleware/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    let inventory = await store.getAll('inventory');
+    let inventory = await store.getAll('inventory', req.user.id);
     const { filter, search } = req.query;
 
     if (search) {
@@ -28,7 +29,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const input = req.body;
 
@@ -44,7 +45,7 @@ router.post('/', async (req, res) => {
       required: Number(input.required) || 0
     };
 
-    await store.upsertRow('inventory', item.id, item);
+    await store.upsertRow('inventory', item.id, item, req.user.id);
 
     res.status(201).json({ success: true, item });
   } catch (err) {
@@ -53,15 +54,20 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const existing = await store.getById('inventory', req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Inventory item not found' });
     }
 
+    const row = await store.getRowById('inventory', req.params.id);
+    if (row.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
     const updated = { ...existing, ...req.body };
-    await store.upsertRow('inventory', req.params.id, updated);
+    await store.upsertRow('inventory', req.params.id, updated, req.user.id);
 
     res.json({ success: true, item: updated });
   } catch (err) {
@@ -70,10 +76,15 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const existing = await store.getById('inventory', req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'Inventory item not found' });
+
+    const row = await store.getRowById('inventory', req.params.id);
+    if (row.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
 
     await store.deleteRow('inventory', req.params.id);
     res.json({ success: true });
@@ -83,9 +94,9 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-router.post('/check-availability', async (req, res) => {
+router.post('/check-availability', requireAuth, async (req, res) => {
   try {
-    const inventory = await store.getAll('inventory');
+    const inventory = await store.getAll('inventory', req.user.id);
     const { materials } = req.body;
     if (!Array.isArray(materials)) {
       return res.status(400).json({ success: false, error: 'materials array required' });

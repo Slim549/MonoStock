@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const store = require('../data/store');
 
 function getSecret() {
   return process.env.JWT_SECRET || process.env.AUTH_SECRET || 'monostock-dev-secret-change-me';
@@ -29,4 +30,12 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, requireAuth };
+/**
+ * Check a user's access level to a folder.
+ * Returns 'owner' | 'editor' | 'viewer' | null.
+ */
+async function checkFolderAccess(userId, folderId) {
+  return store.getFolderRole(folderId, userId);
+}
+
+module.exports = { authMiddleware, requireAuth, checkFolderAccess };

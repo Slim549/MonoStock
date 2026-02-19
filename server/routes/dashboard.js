@@ -1,24 +1,41 @@
 const express = require('express');
 const router = express.Router();
 const store = require('../data/store');
+const { requireAuth } = require('../middleware/auth');
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const data = await store.load();
-    res.json(data);
+    const userId = req.user.id;
+    const data = await store.load(userId);
+
+    const sharedFolders = await store.getSharedFolders(userId);
+    const sharedFolderIds = sharedFolders.map(f => f.id);
+    const sharedOrders = await store.getOrdersByFolderIds(sharedFolderIds);
+    const ownerIds = [...new Set(sharedFolders.map(f => f._ownerId))];
+    const sharedCustomers = await store.getReferencedCustomers(sharedOrders, ownerIds);
+    const ownerNames = await store.getSharedFolderOwnerNames(sharedFolders);
+
+    sharedFolders.forEach(f => { f._ownerName = ownerNames[f._ownerId] || 'Unknown'; });
+
+    res.json({
+      ...data,
+      sharedFolders,
+      sharedOrders,
+      sharedCustomers
+    });
   } catch (err) {
     console.error('[dashboard] load error:', err);
     res.status(500).json({ success: false, error: 'Failed to load dashboard' });
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const data = req.body;
     if (!data || typeof data !== 'object') {
       return res.status(400).json({ success: false, error: 'Invalid data structure' });
     }
-    const saved = await store.save(data);
+    const saved = await store.save(data, req.user.id);
     res.json({ success: true, data: saved });
   } catch (err) {
     console.error('[dashboard] save error:', err);
@@ -26,9 +43,9 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/kpi', async (req, res) => {
+router.get('/kpi', requireAuth, async (req, res) => {
   try {
-    const data = await store.load();
+    const data = await store.load(req.user.id);
     const orders = data.orders || [];
     const customers = data.customers || [];
     const inventory = data.inventory || [];

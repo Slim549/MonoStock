@@ -103,6 +103,18 @@ function toPublic(user) {
   };
 }
 
+async function searchUsers(query, excludeUserId) {
+  if (!query || query.trim().length < 2) return [];
+  const q = query.trim().toLowerCase();
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .or(`name.ilike.%${q}%,email.ilike.%${q}%`)
+    .limit(10);
+  if (error) throw error;
+  return (data || []).filter(u => u.id !== excludeUserId);
+}
+
 module.exports = {
   findByEmail,
   findById,
@@ -110,5 +122,6 @@ module.exports = {
   verifyPassword,
   updateUser,
   changePassword,
-  hasUsers
+  hasUsers,
+  searchUsers
 };

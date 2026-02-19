@@ -78,11 +78,19 @@ setTimeout(async () => {
 
 function loadAndRenderDashboard() {
   window.dashboardAPI.load().then(data => {
-    if (data) dashboardData = data;
+    if (data) {
+      dashboardData = data;
+      dashboardData.sharedFolders = data.sharedFolders || [];
+      dashboardData.sharedOrders = data.sharedOrders || [];
+      dashboardData.sharedCustomers = data.sharedCustomers || [];
+    }
     if (!Array.isArray(dashboardData.inventory)) dashboardData.inventory = [];
     if (!Array.isArray(dashboardData.orderFolders)) dashboardData.orderFolders = [];
     if (!Array.isArray(dashboardData.trash)) dashboardData.trash = [];
     if (!Array.isArray(dashboardData.products)) dashboardData.products = [];
+    if (!Array.isArray(dashboardData.sharedFolders)) dashboardData.sharedFolders = [];
+    if (!Array.isArray(dashboardData.sharedOrders)) dashboardData.sharedOrders = [];
+    if (!Array.isArray(dashboardData.sharedCustomers)) dashboardData.sharedCustomers = [];
     updateUserUI();
     renderDashboard();
   }).catch(err => {
@@ -2532,11 +2540,28 @@ function renderCustomerProfitability() {
 // ---------------- ORDER FOLDERS & TRASH SYSTEM ----------------
 
 function getOrdersInFolder(folderId) {
-  return dashboardData.orders.filter(o => o.folderId === folderId);
+  const own = dashboardData.orders.filter(o => o.folderId === folderId);
+  if (own.length > 0) return own;
+  const shared = (dashboardData.sharedOrders || []).filter(o => o.folderId === folderId);
+  return shared.length > 0 ? shared : own;
 }
 
 function getFolderById(folderId) {
-  return dashboardData.orderFolders.find(f => f.id === folderId);
+  return dashboardData.orderFolders.find(f => f.id === folderId)
+    || (dashboardData.sharedFolders || []).find(f => f.id === folderId);
+}
+
+function getSharedFolderRole(folderId) {
+  const sf = (dashboardData.sharedFolders || []).find(f => f.id === folderId);
+  return sf ? sf._role : null;
+}
+
+function isFolderSharedWithMe(folderId) {
+  return (dashboardData.sharedFolders || []).some(f => f.id === folderId);
+}
+
+function isMyFolder(folderId) {
+  return dashboardData.orderFolders.some(f => f.id === folderId);
 }
 
 function getTrashCount() {
@@ -2802,6 +2827,137 @@ async function deleteFolderById(folderId) {
   renderOrdersPage();
 }
 
+// ---------------- FOLDER SHARING ----------------
+
+async function showShareFolderModal(folderId) {
+  const folder = getFolderById(folderId);
+  if (!folder) return;
+
+  let collaborators = [];
+  try {
+    const res = await window.dashboardAPI.getFolderCollaborators(folderId);
+    if (res.success) collaborators = res.collaborators;
+  } catch (e) {
+    console.error('[share] Failed to load collaborators:', e);
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+
+  function renderCollabList() {
+    return collaborators.length
+      ? collaborators.map(c => `
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:8px;">
+          <div>
+            <strong style="font-size:0.9em;">${c.name}</strong>
+            <div style="font-size:0.78em; opacity:0.55;">${c.email}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <select class="collab-role-select" data-user-id="${c.userId}" style="padding:4px 8px; font-size:0.82em; border-radius:6px;">
+              <option value="viewer" ${c.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+              <option value="editor" ${c.role === 'editor' ? 'selected' : ''}>Editor</option>
+            </select>
+            <button class="collab-remove-btn" data-user-id="${c.userId}" style="background:var(--danger-color); padding:4px 10px; font-size:0.8em; border-radius:6px;">Remove</button>
+          </div>
+        </div>
+      `).join('')
+      : '<p style="opacity:0.5; font-size:0.88em; margin:8px 0;">No collaborators yet.</p>';
+  }
+
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width: 520px;">
+      <h3 style="margin-top:0; margin-bottom:16px;">Share "${folder.name}"</h3>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.85em; opacity:0.7; display:block; margin-bottom:6px;">Invite by email</label>
+        <div style="display:flex; gap:8px;">
+          <input id="share-email-input" type="email" placeholder="user@example.com" style="flex:1; padding:8px 12px;">
+          <select id="share-role-select" style="padding:8px 10px; border-radius:8px;">
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+          <button id="share-invite-btn" style="background:var(--success-color); white-space:nowrap;">Invite</button>
+        </div>
+        <div id="share-error" style="color:var(--danger-color); font-size:0.82em; margin-top:6px; display:none;"></div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.85em; opacity:0.7; display:block; margin-bottom:6px;">Current collaborators</label>
+        <div id="collab-list">${renderCollabList()}</div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="share-close-btn" style="background:var(--border-color); color:var(--text-color);">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  function refreshCollabList() {
+    const listEl = document.getElementById("collab-list");
+    if (listEl) listEl.innerHTML = renderCollabList();
+    wireCollabEvents();
+  }
+
+  function wireCollabEvents() {
+    modal.querySelectorAll(".collab-role-select").forEach(sel => {
+      sel.onchange = async () => {
+        try {
+          await window.dashboardAPI.updateCollaboratorRole(folderId, sel.dataset.userId, sel.value);
+          const c = collaborators.find(x => x.userId === sel.dataset.userId);
+          if (c) c.role = sel.value;
+          showToast("Role updated", "success");
+        } catch (e) {
+          showToast("Failed to update role", "error");
+        }
+      };
+    });
+
+    modal.querySelectorAll(".collab-remove-btn").forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await window.dashboardAPI.removeCollaborator(folderId, btn.dataset.userId);
+          collaborators = collaborators.filter(x => x.userId !== btn.dataset.userId);
+          refreshCollabList();
+          showToast("Collaborator removed", "success");
+        } catch (e) {
+          showToast("Failed to remove collaborator", "error");
+        }
+      };
+    });
+  }
+  wireCollabEvents();
+
+  document.getElementById("share-invite-btn").onclick = async () => {
+    const email = document.getElementById("share-email-input").value.trim();
+    const role = document.getElementById("share-role-select").value;
+    const errEl = document.getElementById("share-error");
+
+    if (!email) { errEl.textContent = "Enter an email address"; errEl.style.display = "block"; return; }
+    errEl.style.display = "none";
+
+    try {
+      const res = await window.dashboardAPI.addCollaborator(folderId, email, role);
+      if (res.success) {
+        collaborators.push(res.collaborator);
+        document.getElementById("share-email-input").value = "";
+        refreshCollabList();
+        showToast(`Invited ${res.collaborator.name || email}`, "success");
+      } else {
+        errEl.textContent = res.error || "Failed to invite";
+        errEl.style.display = "block";
+      }
+    } catch (e) {
+      errEl.textContent = e.message || "Failed to invite";
+      errEl.style.display = "block";
+    }
+  };
+
+  document.getElementById("share-close-btn").onclick = () => modal.remove();
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+}
+
 // ---------------- ORDERS PAGE (FOLDER VIEW) ----------------
 let orderSortCol = null;
 let orderSortDir = "asc";
@@ -2817,6 +2973,7 @@ function renderOrdersPage() {
 
   const totalOrders = dashboardData.orders.length;
   const folderCount = dashboardData.orderFolders.length;
+  const sharedFolders = dashboardData.sharedFolders || [];
   const trashCount = getTrashCount();
 
   appDiv.innerHTML = `
@@ -2824,18 +2981,25 @@ function renderOrdersPage() {
       <h1>${t("orders")}</h1>
       <div style="font-size:0.88em; opacity:0.6; margin-top:-10px; margin-bottom:16px;">
         <strong>${folderCount}</strong> folder${folderCount === 1 ? "" : "s"} &middot; <strong>${totalOrders}</strong> ${t("totalOrdersLabel")}
+        ${sharedFolders.length ? ` &middot; <strong>${sharedFolders.length}</strong> shared` : ''}
       </div>
     </div>
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
       <button id="btn-new-folder" style="background: var(--success-color);">+ New Folder</button>
-      <button id="btn-import-excel" style="background: var(--info-color);">📥 Import Excel</button>
+      <button id="btn-import-excel" style="background: var(--info-color);">Import Excel</button>
       <button id="btn-trash" style="background: ${trashCount ? 'var(--danger-color)' : 'var(--border-color)'}; color: ${trashCount ? 'white' : 'var(--text-color)'};">
-        🗑️ Trash${trashCount ? ` (${trashCount})` : ''}
+        Trash${trashCount ? ` (${trashCount})` : ''}
       </button>
     </div>
 
     <div class="folder-grid" id="folderGrid"></div>
+    ${sharedFolders.length ? `
+      <div style="margin-top:32px;">
+        <h2 style="font-size:1.15em; opacity:0.75; margin-bottom:14px;">Shared with me</h2>
+        <div class="folder-grid" id="sharedFolderGrid"></div>
+      </div>
+    ` : ''}
   `;
 
   const grid = document.getElementById("folderGrid");
@@ -2858,6 +3022,7 @@ function renderOrdersPage() {
       card.className = "folder-card";
       card.innerHTML = `
         <div class="folder-actions">
+          <button onclick="event.stopPropagation(); showShareFolderModal('${folder.id}')" style="background:var(--info-color);" title="Share">👥</button>
           <button onclick="event.stopPropagation(); renameFolder('${folder.id}')" style="background:var(--warning-color);" title="Rename">✏️</button>
           <button onclick="event.stopPropagation(); deleteFolderById('${folder.id}')" style="background:var(--danger-color);" title="Move to Trash">🗑️</button>
         </div>
@@ -2870,6 +3035,32 @@ function renderOrdersPage() {
       `;
       card.onclick = () => renderFolderContents(folder.id);
       grid.appendChild(card);
+    });
+  }
+
+  if (sharedFolders.length) {
+    const sharedGrid = document.getElementById("sharedFolderGrid");
+    sharedFolders.forEach(folder => {
+      const orders = getOrdersInFolder(folder.id);
+      const activeCount = orders.filter(o => (o.status || "").trim() !== "Paid in Full").length;
+      const totalUnits = orders.reduce((sum, o) => sum + (Number(o.quantity) || 0), 0);
+      const roleBadge = folder._role === 'editor'
+        ? '<span style="background:var(--success-color); color:#fff; padding:2px 8px; border-radius:10px; font-size:0.75em;">Editor</span>'
+        : '<span style="background:var(--border-color); padding:2px 8px; border-radius:10px; font-size:0.75em;">Viewer</span>';
+
+      const card = document.createElement("div");
+      card.className = "folder-card";
+      card.style.borderLeft = "3px solid var(--info-color)";
+      card.innerHTML = `
+        <div class="folder-icon">📁</div>
+        <div class="folder-name">${folder.name} ${roleBadge}</div>
+        <div class="folder-meta">
+          <span>${orders.length} order${orders.length === 1 ? "" : "s"} &middot; ${activeCount} active</span>
+          <span>${totalUnits} unit${totalUnits === 1 ? "" : "s"} &middot; Shared by ${folder._ownerName || 'Unknown'}</span>
+        </div>
+      `;
+      card.onclick = () => renderFolderContents(folder.id);
+      sharedGrid.appendChild(card);
     });
   }
 
@@ -2889,9 +3080,19 @@ function renderFolderContents(folderId) {
   window.currentPage = "orders";
   currentOpenFolderId = folderId;
 
+  const isShared = isFolderSharedWithMe(folderId);
+  const sharedRole = isShared ? getSharedFolderRole(folderId) : null;
+  const canEdit = !isShared || sharedRole === 'editor';
+
   const folderOrders = getOrdersInFolder(folderId);
   const activeOrders = folderOrders.filter(o => (o.status || "").trim() !== "Paid in Full").length;
   const totalUnits = folderOrders.reduce((sum, o) => sum + (Number(o.quantity) || 0), 0);
+
+  const roleBadge = isShared
+    ? (sharedRole === 'editor'
+      ? ' <span style="background:var(--success-color); color:#fff; padding:2px 8px; border-radius:10px; font-size:0.65em; vertical-align:middle;">Editor</span>'
+      : ' <span style="background:var(--border-color); padding:2px 8px; border-radius:10px; font-size:0.65em; vertical-align:middle;">Viewer</span>')
+    : '';
 
   appDiv.innerHTML = `
     <div class="folder-table-view">
@@ -2902,14 +3103,15 @@ function renderFolderContents(folderId) {
       Back to Folders
     </button>
     <div>
-      <h1>📁 ${folder.name}</h1>
+      <h1>📁 ${folder.name}${roleBadge}</h1>
       <div style="font-size:0.88em; opacity:0.6; margin-top:-10px; margin-bottom:10px;">
         <strong>${folderOrders.length}</strong> ${t("totalOrdersLabel")} &middot; <strong>${activeOrders}</strong> ${t("activeLabel")} &middot; <strong>${totalUnits}</strong> ${t("unitsLabel")}
+        ${isShared ? ` &middot; Shared by ${folder._ownerName || 'Unknown'}` : ''}
       </div>
     </div>
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
-      <button id="add">${t("btnAddOrder")}</button>
+      ${canEdit ? `<button id="add">${t("btnAddOrder")}</button>` : ''}
       <div class="search-wrapper" id="searchContainer">
         <input
           id="orderSearch"
@@ -3029,13 +3231,15 @@ function renderFolderContents(folderId) {
     renderOrderRows(filtered);
   });
 
-  document.getElementById("add").onclick = () => showOrderForm(undefined, folderId);
+  const addBtn = document.getElementById("add");
+  if (addBtn) addBtn.onclick = () => showOrderForm(undefined, folderId);
   renderNav("orders");
 }
 
 function filterOrders(query, folderId = null) {
+  const allOrders = [...dashboardData.orders, ...(dashboardData.sharedOrders || [])];
   const baseOrders = folderId
-    ? dashboardData.orders.filter(o => o.folderId === folderId)
+    ? allOrders.filter(o => o.folderId === folderId)
     : dashboardData.orders;
 
   const tokens = parseSearchQuery(query.toLowerCase());

@@ -29,6 +29,7 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/exports', require('./routes/exports'));
 app.use('/api/imports', require('./routes/imports'));
 app.use('/api/backups', require('./routes/backups'));
+app.use('/api/folders', require('./routes/collaborators'));
 
 // ── Serve static frontend files from the project root ──
 const webRoot = path.join(__dirname, '..');
