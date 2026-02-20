@@ -53,8 +53,17 @@ function calculateBudget(order, budgetInput) {
 
   const total = taxableSubtotal + noTaxTotal + taxAmount + afterTaxTotal;
 
-  const costPerUnit = Number(budgetInput.costPerUnit) || 0;
-  const totalCost = costPerUnit * effectiveQty;
+  let totalCost, costPerUnit;
+  if (multiMode && Array.isArray(budgetInput.orderProducts)) {
+    totalCost = budgetInput.orderProducts.reduce(
+      (s, l) => s + (Number(l.qty) || 0) * (Number(l.costPerUnit) || 0),
+      0
+    );
+    costPerUnit = effectiveQty > 0 ? totalCost / effectiveQty : 0;
+  } else {
+    costPerUnit = Number(budgetInput.costPerUnit) || 0;
+    totalCost = costPerUnit * effectiveQty;
+  }
   const profit = total - totalCost;
   const margin = total > 0 ? (profit / total) * 100 : 0;
 

@@ -164,7 +164,7 @@ function updateUserUI() {
 const translations = {
   en: {
     // Nav
-    dashboard: "Dashboard", orders: "Orders", customers: "Customers", inventory: "Inventory", settings: "Settings",
+    dashboard: "Dashboard", orders: "Orders", customers: "Customers", inventory: "Inventory", invoices: "Invoices", settings: "Settings",
     // Page titles & subtitles
     budgetForOrder: "Budget for Order", welcomeTitle: "MonoStock",
     totalOrdersLabel: "total orders", activeLabel: "active", unitsLabel: "units",
@@ -240,7 +240,7 @@ const translations = {
     budgetSaved: "Budget saved! Total:",
   },
   es: {
-    dashboard: "Tablero", orders: "Pedidos", customers: "Clientes", inventory: "Inventario", settings: "Ajustes",
+    dashboard: "Tablero", orders: "Pedidos", customers: "Clientes", inventory: "Inventario", invoices: "Facturas", settings: "Ajustes",
     budgetForOrder: "Presupuesto para Pedido", welcomeTitle: "MonoStock",
     totalOrdersLabel: "pedidos totales", activeLabel: "activos", unitsLabel: "unidades",
     customersOnFile: "cliente en archivo", customersOnFilePlural: "clientes en archivo",
@@ -304,7 +304,7 @@ const translations = {
     budgetSaved: "¡Presupuesto guardado! Total:",
   },
   fr: {
-    dashboard: "Tableau de bord", orders: "Commandes", customers: "Clients", inventory: "Inventaire", settings: "Paramètres",
+    dashboard: "Tableau de bord", orders: "Commandes", customers: "Clients", inventory: "Inventaire", invoices: "Factures", settings: "Paramètres",
     budgetForOrder: "Budget pour la Commande", welcomeTitle: "MonoStock",
     totalOrdersLabel: "commandes totales", activeLabel: "actives", unitsLabel: "unités",
     customersOnFile: "client en fichier", customersOnFilePlural: "clients en fichier",
@@ -387,6 +387,27 @@ function getSettings() {
 
 function saveSettings(settings) {
   localStorage.setItem("appSettings", JSON.stringify(settings));
+}
+
+function getInvoiceTemplate() {
+  const s = getSettings();
+  const t = s.invoiceTemplate || {};
+  return {
+    logoPath: t.logoPath ?? s.companyLogoPath ?? "",
+    companyAddress: t.companyAddress ?? "",
+    companyPhone: t.companyPhone ?? "",
+    descriptionDefault: t.descriptionDefault ?? "",
+    termsDefault: t.termsDefault ?? "",
+    thankYouText: t.thankYouText ?? "",
+    customNote: t.customNote ?? "",
+    companyName: t.companyName ?? s.companyName ?? ""
+  };
+}
+
+function saveInvoiceTemplate(template) {
+  const s = getSettings();
+  s.invoiceTemplate = { ...(s.invoiceTemplate || {}), ...template };
+  saveSettings(s);
 }
 
 function applySettings() {
@@ -549,6 +570,185 @@ function showKeyboardShortcutsDialog() {
   `;
   document.body.appendChild(modal);
   modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+}
+
+// ---------------- INVOICES PAGE (Visual Template Editor) ----------------
+function renderInvoicesPage() {
+  if (!appDiv) return;
+
+  window.currentPage = "invoices";
+  const tmpl = getInvoiceTemplate();
+  const esc = (v) => (v || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  appDiv.innerHTML = `
+    <h1>${t("invoices")}</h1>
+    <p style="opacity:0.7; margin-top:-8px; margin-bottom:24px; font-size:0.95em;">
+      Customize your invoice template. Order details (customer, amounts, etc.) are filled from each order.
+    </p>
+
+    <div class="invoice-editor-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; align-items:start;">
+      <div class="invoice-editor-form card" style="padding:24px;">
+        <h2 style="margin-top:0;">Template Fields</h2>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Top Logo</label>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <button id="inv-pick-logo" style="padding:8px 16px; background:var(--info-color);">Choose Image…</button>
+            <button id="inv-clear-logo" style="padding:8px 16px; background:var(--danger-color);" ${!tmpl.logoPath ? "disabled" : ""}>Remove</button>
+            <span id="inv-logo-status" style="font-size:0.85em; opacity:0.7;">${tmpl.logoPath ? "✔ Logo set" : "No logo"}</span>
+          </div>
+          ${tmpl.logoPath ? `<div style="margin-top:10px;"><img id="inv-logo-preview" src="${tmpl.logoPath.startsWith("data:") ? tmpl.logoPath : "file:///" + (tmpl.logoPath || "").replace(/\\\\/g, "/")}" style="max-width:200px; max-height:80px; border-radius:8px; border:1px solid var(--border-color);"></div>` : ""}
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Company Address</label>
+          <textarea id="inv-company-address" rows="3" placeholder="Street, City, State ZIP" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.companyAddress)}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Business Phone</label>
+          <input type="text" id="inv-company-phone" placeholder="(555) 123-4567" value="${esc(tmpl.companyPhone)}" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text);">
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Description (default when order has none)</label>
+          <textarea id="inv-description" rows="4" placeholder="Choose order decription. If left blank, the order description will be used." style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.descriptionDefault)}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Terms & Conditions</label>
+          <textarea id="inv-terms" rows="3" placeholder="Payment terms, policies…" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.termsDefault)}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Thank You Message</label>
+          <input type="text" id="inv-thank-you" placeholder="Thank you for your business." value="${esc(tmpl.thankYouText)}" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text);">
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Custom Note to Customer</label>
+          <textarea id="inv-custom-note" rows="2" placeholder="Optional closing note…" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.customNote)}</textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Company Name / Signature</label>
+          <input type="text" id="inv-company-name" placeholder="Company or brand name" value="${esc(tmpl.companyName)}" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text);">
+        </div>
+
+        <button id="inv-save" style="background:var(--success-color); padding:12px 24px; font-weight:600;">Save Template</button>
+      </div>
+
+      <div class="invoice-preview card" style="padding:24px; background:var(--card-bg);">
+        <h2 style="margin-top:0;">Preview</h2>
+        <div id="invoice-preview-content" class="invoice-preview-paper" style="font-family:Georgia, serif; font-size:12px; line-height:1.6; padding:16px; border:1px dashed #ddd; border-radius:12px; background:#ffffff; color:#212529; min-height:400px;">
+          <div style="text-align:center; margin-bottom:16px;">
+            ${tmpl.logoPath ? `<img src="${tmpl.logoPath.startsWith("data:") ? tmpl.logoPath : "file:///" + (tmpl.logoPath || "").replace(/\\\\/g, "/")}" style="max-width:180px; max-height:60px;">` : '<div style="opacity:0.4;">[Logo]</div>'}
+          </div>
+          <div style="text-align:center; margin-bottom:16px; font-size:10px;">
+            ${(tmpl.companyAddress || "").split("\n").filter(Boolean).map(l => esc(l)).join("<br>") || "<span style='opacity:0.4'>[Address]</span>"}
+            ${tmpl.companyPhone ? `<br>${tmpl.companyPhone}` : ""}
+          </div>
+          <div style="border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px; font-weight:bold;">INVOICE</div>
+          <p style="opacity:0.6; font-size:11px;"><em>Invoice #, Date, Order/Customer info come from each order.</em></p>
+          <p><strong>Description:</strong> ${tmpl.descriptionDefault ? esc(tmpl.descriptionDefault).substring(0, 80) + (tmpl.descriptionDefault.length > 80 ? "…" : "") : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+          <p><strong>Terms:</strong> ${tmpl.termsDefault ? esc(tmpl.termsDefault).substring(0, 60) + "…" : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+          <p style="margin-top:16px;">${tmpl.thankYouText || "<span style='opacity:0.4'>[Thank you message]</span>"}</p>
+          <p>${tmpl.companyName || "<span style='opacity:0.4'>[Company name]</span>"}</p>
+          ${tmpl.customNote ? `<p style="opacity:0.8; font-size:11px;">${esc(tmpl.customNote).substring(0, 60)}…</p>` : ""}
+        </div>
+      </div>
+    </div>
+
+    <style>
+      @media (max-width: 900px) {
+        .invoice-editor-layout { grid-template-columns: 1fr !important; }
+      }
+    </style>
+  `;
+
+  const saveFromForm = () => {
+    const template = {
+      logoPath: tmpl.logoPath,
+      companyAddress: document.getElementById("inv-company-address")?.value ?? "",
+      companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
+      descriptionDefault: document.getElementById("inv-description")?.value ?? "",
+      termsDefault: document.getElementById("inv-terms")?.value ?? "",
+      thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
+      customNote: document.getElementById("inv-custom-note")?.value ?? "",
+      companyName: document.getElementById("inv-company-name")?.value ?? ""
+    };
+    saveInvoiceTemplate(template);
+    showToast("Invoice template saved", "success");
+    renderInvoicesPage();
+  };
+
+  document.getElementById("inv-save")?.addEventListener("click", saveFromForm);
+
+  // Live preview update as user types
+  const updatePreview = () => {
+    const t = {
+      logoPath: tmpl.logoPath,
+      companyAddress: document.getElementById("inv-company-address")?.value ?? "",
+      companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
+      descriptionDefault: document.getElementById("inv-description")?.value ?? "",
+      termsDefault: document.getElementById("inv-terms")?.value ?? "",
+      thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
+      customNote: document.getElementById("inv-custom-note")?.value ?? "",
+      companyName: document.getElementById("inv-company-name")?.value ?? ""
+    };
+    const prev = document.getElementById("invoice-preview-content");
+    if (!prev) return;
+    const esc = (v) => (v || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    prev.innerHTML = `<div style="color:#212529;">
+      <div style="text-align:center; margin-bottom:16px;">
+        ${t.logoPath ? `<img src="${t.logoPath.startsWith("data:") ? t.logoPath : "file:///" + (t.logoPath || "").replace(/\\\\/g, "/")}" style="max-width:180px; max-height:60px;">` : '<div style="opacity:0.4;">[Logo]</div>'}
+      </div>
+      <div style="text-align:center; margin-bottom:16px; font-size:10px;">
+        ${(t.companyAddress || "").split("\n").filter(Boolean).map(l => esc(l)).join("<br>") || "<span style='opacity:0.4'>[Address]</span>"}
+        ${t.companyPhone ? `<br>${esc(t.companyPhone)}` : ""}
+      </div>
+      <div style="border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px; font-weight:bold;">INVOICE</div>
+      <p style="opacity:0.6; font-size:11px;"><em>Invoice #, Date, Order/Customer info come from each order.</em></p>
+      <p><strong>Description:</strong> ${t.descriptionDefault ? esc(t.descriptionDefault).substring(0, 80) + (t.descriptionDefault.length > 80 ? "…" : "") : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+      <p><strong>Terms:</strong> ${t.termsDefault ? esc(t.termsDefault).substring(0, 60) + "…" : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+      <p style="margin-top:16px;">${t.thankYouText || "<span style='opacity:0.4'>[Thank you message]</span>"}</p>
+      <p>${t.companyName || "<span style='opacity:0.4'>[Company name]</span>"}</p>
+      ${t.customNote ? `<p style="opacity:0.8; font-size:11px;">${esc(t.customNote).substring(0, 60)}…</p>` : ""}
+    </div>`;
+  };
+  ["inv-company-address", "inv-company-phone", "inv-description", "inv-terms", "inv-thank-you", "inv-custom-note", "inv-company-name"].forEach(id => {
+    document.getElementById(id)?.addEventListener("input", updatePreview);
+  });
+
+  document.getElementById("inv-pick-logo")?.addEventListener("click", () => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/*";
+    inp.style.display = "none";
+    document.body.appendChild(inp);
+    inp.onchange = () => {
+      const f = inp.files[0];
+      inp.remove();
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        saveInvoiceTemplate({ ...getInvoiceTemplate(), logoPath: dataUrl });
+        showToast("Logo updated", "success");
+        renderInvoicesPage();
+      };
+      reader.readAsDataURL(f);
+    };
+    inp.click();
+  });
+
+  document.getElementById("inv-clear-logo")?.addEventListener("click", () => {
+    saveInvoiceTemplate({ ...getInvoiceTemplate(), logoPath: "" });
+    showToast("Logo removed", "success");
+    renderInvoicesPage();
+  });
+
+  renderNav("invoices");
 }
 
 // ---------------- SETTINGS PAGE ----------------
@@ -1567,7 +1767,8 @@ function renderNav(currentPage) {
     { id: "dashboard", name: t.dashboard, fn: renderDashboard },
     { id: "orders", name: t.orders, fn: renderOrdersPage },
     { id: "customers", name: t.customers, fn: renderCustomersPage },
-    { id: "inventory", name: t.inventory, fn: renderInventoryPage }
+    { id: "inventory", name: t.inventory, fn: renderInventoryPage },
+    { id: "invoices", name: t.invoices, fn: renderInvoicesPage }
   ];
 
   // If nav exists, check if it needs updating (language change) or just active button change
@@ -1836,11 +2037,11 @@ function renderDashboard() {
 
     ${showStatus ? `<div class="card">
       <h2>${t("orderStatusChart")}</h2>
-      <div style="display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start;">
-        <div style="flex: 1; min-width: 280px; max-width: 500px; padding: 20px;">
+      <div class="dashboard-charts-row" style="display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start;">
+        <div class="dashboard-chart-wrap" style="flex: 1; min-width: 280px; max-width: 500px; padding: 20px; min-height: 280px;">
           <canvas id="statusPieChart"></canvas>
         </div>
-        <div style="flex: 1; min-width: 280px; max-width: 600px; padding: 20px;">
+        <div class="dashboard-chart-wrap" style="flex: 1; min-width: 280px; max-width: 600px; padding: 20px; min-height: 280px;">
           <h3 style="margin-top:0;">${t("revenueOverTime")}</h3>
           <canvas id="revenueLineChart"></canvas>
         </div>
@@ -1851,7 +2052,7 @@ function renderDashboard() {
     ${showCost ? `<div class="card">
       <h2 class="card-collapse-header${tableCollapseState.costVsSell ? ' collapsed' : ''}" onclick="toggleTableCollapse('costVsSell')"><span class="collapse-icon">▼</span>${t("costVsSellTitle")}</h2>
       <div class="card-body" id="cardBody-costVsSell" style="display: ${tableCollapseState.costVsSell ? 'none' : 'block'};">
-        <div style="max-width: 700px; margin: 0 auto;">
+        <div class="cost-vs-sell-chart-wrap" style="max-width: 700px; margin: 0 auto; min-height: 260px;">
           <canvas id="costVsSellChart"></canvas>
         </div>
         <div id="costVsSellTable" style="margin-top: 20px;"></div>
@@ -3551,11 +3752,11 @@ function renderOrderRows(orderList) {
       <td>
         <button onclick="openBudgetById('${o.id}')" style="background:var(--info-color);">${budgetDisplay}</button>
       </td>
-      <td style="white-space:nowrap;">
-        <button onclick="generateInvoiceById('${o.id}')" style="background:var(--accent-color); padding:8px 12px;" title="Generate Invoice">📄</button>
-        <button onclick="duplicateOrderById('${o.id}')" style="background:var(--info-color); padding:8px 12px;" title="Duplicate Order">📋</button>
-        <button onclick="editOrderById('${o.id}')" style="background:var(--warning-color); padding:8px 12px;" title="Edit Order">✏️</button>
-        <button onclick="deleteOrderById('${o.id}')" style="background:var(--danger-color); padding:8px 12px;" title="Delete Order">🗑️</button>
+      <td>
+        <button onclick="generateInvoiceById('${o.id}')" style="background:var(--accent-color); padding:6px 10px; font-size:0.85em;">Invoice</button>
+        <button onclick="duplicateOrderById('${o.id}')" style="background:var(--info-color); padding:6px 10px; font-size:0.85em;">Copy</button>
+        <button onclick="editOrderById('${o.id}')" style="background:var(--warning-color); padding:6px 10px; font-size:0.85em;">Edit</button>
+        <button onclick="deleteOrderById('${o.id}')" style="background:var(--danger-color); padding:6px 10px; font-size:0.85em;">Trash</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -3656,14 +3857,18 @@ function openBudget(index) {
     return;
   }
 
-  const multiMode = isMultiProductMode() && Array.isArray(order.orderProducts) && order.orderProducts.length > 0;
+  // Multi-mode: order has product lines from order form OR from a previous budget save
+  const orderProducts = Array.isArray(order.orderProducts) && order.orderProducts.length > 0
+    ? order.orderProducts
+    : (Array.isArray(order.budget?.orderProducts) && order.budget.orderProducts.length > 0 ? order.budget.orderProducts : []);
+  const multiMode = isMultiProductMode() && orderProducts.length > 0;
   const qty = Number(order.quantity) || 1;
 
   const defaultBudget = {
-    unitPrice: 3000,
-    taxRate: 0.07,
-    freight: 1422,
-    costPerUnit: 1500,
+    unitPrice: 0,
+    taxRate: 0,
+    freight: 0,
+    costPerUnit: 0,
     lineItems: []
   };
 
@@ -3674,7 +3879,7 @@ function openBudget(index) {
   const lineItems = budget.lineItems.map(li => ({ ...li }));
 
   // Multi-mode: working copy of order product lines for editing
-  const budgetProductLines = multiMode ? order.orderProducts.map(p => ({ ...p })) : [];
+  const budgetProductLines = multiMode ? orderProducts.map(p => ({ ...p })) : [];
 
   const fmtMoney = (n) => (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -3699,8 +3904,10 @@ function openBudget(index) {
             <tr>
               <th style="text-align:left;">Product</th>
               <th style="text-align:center; width:80px;">Qty</th>
-              <th style="text-align:right; width:140px;">Unit Price (${cur})</th>
-              <th style="text-align:right; width:130px;">Subtotal</th>
+              <th style="text-align:right; width:120px;">Unit Price (${cur})</th>
+              <th style="text-align:right; width:120px;">Cost/Unit (${cur})</th>
+              <th style="text-align:right; width:110px;">Subtotal</th>
+              <th style="text-align:center; width:50px;"></th>
             </tr>
           </thead>
           <tbody id="budget-products-body"></tbody>
@@ -3709,11 +3916,16 @@ function openBudget(index) {
               <td>Total</td>
               <td style="text-align:center;" id="bp-total-qty"></td>
               <td></td>
+              <td style="text-align:right;" id="bp-total-cost"></td>
               <td style="text-align:right;" id="bp-total-amount"></td>
+              <td></td>
             </tr>
           </tfoot>
         </table>
-        <p style="font-size:0.85em; opacity:0.6; margin:0;">Product lines are set when creating/editing the order. Prices can be adjusted here for budgeting.</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px;">
+          <button type="button" id="add-budget-product-line" style="padding:8px 16px; font-size:0.88em; background:var(--success-color);">+ Add Product Line</button>
+          <p style="font-size:0.85em; opacity:0.6; margin:0;">Product lines can be added, removed, and edited here for budgeting.</p>
+        </div>
       </div>
       ` : `
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
@@ -3747,10 +3959,7 @@ function openBudget(index) {
           <label>${t("freightLabel")}</label>
           <input type="text" id="freight" value="${fmtMoney(budget.freight)}">
         </div>
-        <div>
-          <label>${t("costToProduceLabel")}</label>
-          <input type="number" id="budget-cost" value="${(budget.costPerUnit || 0).toFixed(2)}" step="0.01">
-        </div>
+        <p style="font-size:0.9em; opacity:0.7; margin:0; grid-column:1/-1;">Cost to produce is set per product in the table above.</p>
       </div>
       `}
 
@@ -3794,8 +4003,13 @@ function openBudget(index) {
   const totalSpan       = document.getElementById("grand-total");
   const profitDisplay   = document.getElementById("profit-display");
 
-  // ── Multi-mode: render product lines in budget ──
+  // ── Multi-mode: render product lines in budget (editable: product, qty, price; add/remove) ──
   if (multiMode) {
+    const productsCatalog = dashboardData.products || [];
+    const catalogOptions = productsCatalog.map(p =>
+      `<option value="${(p.name || "").replace(/"/g, "&quot;")}" data-price="${p.defaultPrice || 0}">${p.name || "Unnamed"}</option>`
+    ).join("");
+
     function renderBudgetProductLines() {
       const tbody = document.getElementById("budget-products-body");
       if (!tbody) return;
@@ -3804,24 +4018,59 @@ function openBudget(index) {
       budgetProductLines.forEach((line, i) => {
         const subtotal = (line.qty || 0) * (line.unitPrice || 0);
         const tr = document.createElement("tr");
+        const productCell = productsCatalog.length > 0
+          ? `<select class="bp-product" data-idx="${i}" style="width:100%; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text);">
+              <option value="">-- Select --</option>${catalogOptions}
+            </select>`
+          : `<input type="text" class="bp-product-text" data-idx="${i}" value="${(line.productName || "").replace(/"/g, "&quot;")}" placeholder="Product name" style="width:100%; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text);">`;
         tr.innerHTML = `
-          <td style="padding:8px 12px;">${line.productName || "Unnamed"}</td>
+          <td style="padding:8px 12px;">${productCell}</td>
           <td style="text-align:center;">
             <input type="number" class="bp-qty" data-idx="${i}" value="${line.qty || 1}" min="1"
                    style="width:60px; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text); text-align:center;">
           </td>
           <td style="text-align:right;">
             <input type="number" class="bp-price" data-idx="${i}" value="${(line.unitPrice || 0).toFixed(2)}" step="0.01" min="0"
-                   style="width:110px; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text); text-align:right;">
+                   style="width:90px; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text); text-align:right;">
+          </td>
+          <td style="text-align:right;">
+            <input type="number" class="bp-cost" data-idx="${i}" value="${(line.costPerUnit || 0).toFixed(2)}" step="0.01" min="0"
+                   style="width:90px; padding:6px; border:2px solid var(--input-border); border-radius:6px; background:var(--input-bg); color:var(--input-text); text-align:right;">
           </td>
           <td style="text-align:right; font-weight:600; padding:8px 12px; font-family:'Monaco','Courier New',monospace;">
             ${cur}${fmtMoney(subtotal)}
+          </td>
+          <td style="text-align:center;">
+            ${budgetProductLines.length > 1 ? `<button type="button" class="bp-delete" data-idx="${i}" style="color:var(--danger-color); font-weight:bold; border:none; background:none; cursor:pointer; font-size:1.3em; padding:4px 8px;">✕</button>` : ""}
           </td>
         `;
         tbody.appendChild(tr);
       });
 
+      // Set select values for catalog dropdowns
+      tbody.querySelectorAll(".bp-product").forEach(sel => {
+        const idx = parseInt(sel.dataset.idx);
+        sel.value = budgetProductLines[idx].productName || "";
+      });
+
       // Wire events
+      tbody.querySelectorAll(".bp-product").forEach(sel => {
+        sel.addEventListener("change", () => {
+          const idx = parseInt(sel.dataset.idx);
+          budgetProductLines[idx].productName = sel.value;
+          const selectedOpt = sel.selectedOptions[0];
+          if (selectedOpt && selectedOpt.dataset.price) {
+            budgetProductLines[idx].unitPrice = parseFloat(selectedOpt.dataset.price) || 0;
+          }
+          renderBudgetProductLines();
+          calculateTotal();
+        });
+      });
+      tbody.querySelectorAll(".bp-product-text").forEach(input => {
+        input.addEventListener("input", () => {
+          budgetProductLines[parseInt(input.dataset.idx)].productName = input.value;
+        });
+      });
       tbody.querySelectorAll(".bp-qty").forEach(input => {
         input.addEventListener("input", () => {
           budgetProductLines[parseInt(input.dataset.idx)].qty = parseInt(input.value) || 1;
@@ -3836,15 +4085,45 @@ function openBudget(index) {
           calculateTotal();
         });
       });
+      tbody.querySelectorAll(".bp-cost").forEach(input => {
+        input.addEventListener("input", () => {
+          budgetProductLines[parseInt(input.dataset.idx)].costPerUnit = parseFloat(input.value) || 0;
+          renderBudgetProductLines();
+          calculateTotal();
+        });
+      });
+      tbody.querySelectorAll(".bp-delete").forEach(btn => {
+        btn.addEventListener("click", () => {
+          budgetProductLines.splice(parseInt(btn.dataset.idx), 1);
+          renderBudgetProductLines();
+          calculateTotal();
+        });
+      });
 
       // Update totals in footer
       const totalQty = budgetProductLines.reduce((s, l) => s + (l.qty || 0), 0);
       const totalAmount = budgetProductLines.reduce((s, l) => s + (l.qty || 0) * (l.unitPrice || 0), 0);
+      const totalCost = budgetProductLines.reduce((s, l) => s + (l.qty || 0) * (l.costPerUnit || 0), 0);
       const tqEl = document.getElementById("bp-total-qty");
+      const tcEl = document.getElementById("bp-total-cost");
       const taEl = document.getElementById("bp-total-amount");
       if (tqEl) tqEl.textContent = totalQty;
+      if (tcEl) tcEl.textContent = `${cur}${fmtMoney(totalCost)}`;
       if (taEl) taEl.textContent = `${cur}${fmtMoney(totalAmount)}`;
     }
+
+    document.getElementById("add-budget-product-line").onclick = () => {
+      const firstProduct = productsCatalog.length > 0 ? productsCatalog[0] : null;
+      budgetProductLines.push({
+        productName: firstProduct ? firstProduct.name : "",
+        qty: 1,
+        unitPrice: firstProduct ? (firstProduct.defaultPrice || 0) : 0,
+        costPerUnit: 0
+      });
+      renderBudgetProductLines();
+      calculateTotal();
+    };
+
     renderBudgetProductLines();
   }
 
@@ -4036,19 +4315,24 @@ function openBudget(index) {
 
     totalSpan.textContent = fmtMoney(total);
 
-    // Profit display
-    const costPerUnit = parseFloat(costInput.value) || 0;
-    const totalCost = costPerUnit * effectiveQty;
+    // Profit display - totalCost: per-product in multi-mode, single costPerUnit in single-mode
+    const totalCost = multiMode
+      ? budgetProductLines.reduce((s, l) => s + (l.qty || 0) * (l.costPerUnit || 0), 0)
+      : (parseFloat(costInput?.value) || 0) * effectiveQty;
+    const costPerUnit = effectiveQty > 0 ? totalCost / effectiveQty : 0;
     const profit = total - totalCost;
     const margin = total > 0 ? ((profit / total) * 100).toFixed(1) : 0;
     const profitColor = profit >= 0 ? "var(--success-color)" : "var(--danger-color)";
     const profitIcon = profit >= 0 ? "📈" : "📉";
+    const costDetail = multiMode
+      ? budgetProductLines.map(l => `${(l.productName || "Product").substring(0, 12)}: ${l.qty}×${cur}${fmtMoney(l.costPerUnit || 0)}`).join(" · ")
+      : `(${effectiveQty} × ${cur}${fmtMoney(costPerUnit)})`;
     profitDisplay.innerHTML = `
       <div style="display: flex; justify-content: space-around; align-items: center; gap: 20px; padding: 10px; background: var(--card-bg); border-radius: 8px; margin-top: 8px;">
         <div>
           <div style="font-size: 0.85em; opacity: 0.7;">${t("totalCostLabel")}</div>
           <div class="number-display" style="font-size: 1.1em; font-weight: 600;">${cur}${fmtMoney(totalCost)}</div>
-          <div style="font-size: 0.8em; opacity: 0.6;">(${effectiveQty} × ${cur}${fmtMoney(costPerUnit)})</div>
+          <div style="font-size: 0.8em; opacity: 0.6;">${costDetail}</div>
         </div>
         <div style="border-left: 2px solid var(--border-color); height: 50px;"></div>
         <div>
@@ -4064,7 +4348,7 @@ function openBudget(index) {
       unitPrice,
       productSubtotal,
       freight,
-      costPerUnit,
+      costPerUnit: costPerUnit,
       cost: totalCost,
       lineItems: lineItems.map(li => ({
         label: li.label,
@@ -4633,6 +4917,32 @@ async function duplicateOrderById(id) {
 
 
 // ---------------- INVOICE ----------------
+function showInvoiceLoadingOverlay(show) {
+  let el = document.getElementById("invoice-loading-overlay");
+  if (show) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "invoice-loading-overlay";
+      el.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:30000;";
+      el.innerHTML = `<div style="background:var(--card-bg); padding:32px 48px; border-radius:16px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+        <div style="width:48px; height:48px; margin:0 auto 16px; border:4px solid var(--border-color); border-top-color:var(--accent-color); border-radius:50%; animation:invoiceSpin 0.8s linear infinite;"></div>
+        <div style="font-weight:600;">Generating invoice…</div>
+        <div style="font-size:0.88em; opacity:0.7; margin-top:4px;">Please wait</div>
+      </div>`;
+      if (!document.getElementById("invoice-spin-style")) {
+        const style = document.createElement("style");
+        style.id = "invoice-spin-style";
+        style.textContent = "@keyframes invoiceSpin{to{transform:rotate(360deg);}}";
+        document.head.appendChild(style);
+      }
+      document.body.appendChild(el);
+    }
+    el.style.display = "flex";
+  } else if (el) {
+    el.style.display = "none";
+  }
+}
+
 function generateInvoice(index) {
   const order = dashboardData.orders[index];
 
@@ -4652,8 +4962,17 @@ function generateInvoice(index) {
     return;
   }
 
-  // Prepare invoice data
+  const tmpl = getInvoiceTemplate();
   const hasMultiProducts = Array.isArray(order.orderProducts) && order.orderProducts.length > 0;
+
+  // Description: from order (products list or order.description) or template default — no hardcoded fallback
+  const description = hasMultiProducts
+    ? order.orderProducts.map(p => `${p.productName} (×${p.qty})`).join(", ")
+    : (order.description || tmpl.descriptionDefault || "");
+
+  // Terms: from order or template — no "No terms specified"
+  const terms = order.terms || tmpl.termsDefault || "";
+
   const invoiceData = {
     orderNumber: order.orderNumber || "N/A",
     dateTime: formatDate(order.dateTime) || formatDate(new Date().toISOString()),
@@ -4669,23 +4988,27 @@ function generateInvoice(index) {
     billingAddress: order.billingAddress || "",
     shipTo: order.shipTo || "",
     notes: order.notes || "",
-    description: hasMultiProducts
-      ? order.orderProducts.map(p => `${p.productName} (×${p.qty})`).join(", ")
-      : (order.description || getSettings().invoiceDescription || "Provide temporary tankless gravity flushing sanitary waste assemblies. BrandSafway Part #M6474."),
-    terms: order.terms || getSettings().invoiceTerms || "",
+    description,
+    terms,
     budget: order.budget,
-    companyName: getSettings().companyName || "",
-    companyLogoPath: getSettings().companyLogoPath || ""
+    companyName: tmpl.companyName || "",
+    companyLogoPath: tmpl.logoPath || "",
+    companyAddress: tmpl.companyAddress || "",
+    companyPhone: tmpl.companyPhone || "",
+    thankYouText: tmpl.thankYouText || "",
+    customNote: tmpl.customNote || ""
   };
 
-  // Send data to main process via IPC
+  showInvoiceLoadingOverlay(true);
   window.dashboardAPI.generateInvoice(invoiceData)
     .then(filePath => {
+      showInvoiceLoadingOverlay(false);
       console.log("Invoice created:", filePath);
       showToast(`Invoice saved!\n${filePath}`, "success", 6000);
       if (getSettings().autoOpenInvoices && filePath) window.dashboardAPI.openFile(filePath);
     })
     .catch(err => {
+      showInvoiceLoadingOverlay(false);
       console.error("Invoice error:", err);
       showToast("Failed to generate invoice. Check console for details.", "error", 6000);
     });

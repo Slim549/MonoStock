@@ -541,31 +541,39 @@ ipcMain.handle("generate-invoice", async (_, data) => {
   const stream = fs.createWriteStream(filePath);
   doc.pipe(stream);
 
-  // ---------------- Header Logo ----------------
-  const customLogoPath = data.companyLogoPath;
-  const invoiceLogoPath = (customLogoPath && fs.existsSync(customLogoPath))
-    ? customLogoPath
-    : path.join(__dirname, "assets", "logo.png");
-  if (fs.existsSync(invoiceLogoPath)) {
-    const maxW = 225;
-    const maxH = 80;
-    doc.image(
-      invoiceLogoPath,
-      (doc.page.width - maxW) / 2,
-      20,
-      { fit: [maxW, maxH], align: "center", valign: "center" }
-    );
+  // ---------------- Header Logo (file path or data URL) ----------------
+  const customLogo = data.companyLogoPath;
+  let logoDraw = false;
+  if (customLogo && customLogo.startsWith("data:")) {
+    try {
+      const base64 = customLogo.split(",")[1];
+      if (base64) {
+        const buf = Buffer.from(base64, "base64");
+        doc.image(buf, (doc.page.width - 225) / 2, 20, { fit: [225, 80], align: "center", valign: "center" });
+        logoDraw = true;
+      }
+    } catch (_) {}
+  } else if (customLogo && fs.existsSync(customLogo)) {
+    doc.image(customLogo, (doc.page.width - 225) / 2, 20, { fit: [225, 80], align: "center", valign: "center" });
+    logoDraw = true;
+  } else {
+    const defaultLogo = path.join(__dirname, "assets", "logo.png");
+    if (fs.existsSync(defaultLogo)) {
+      doc.image(defaultLogo, (doc.page.width - 225) / 2, 20, { fit: [225, 80], align: "center", valign: "center" });
+      logoDraw = true;
+    }
   }
+  if (!logoDraw) doc.moveDown(2);
 
-  // Add spacing below logo
   doc.moveDown(4);
 
-  // ---------------- Company Address Centered ----------------
-  doc.fontSize(10)
-     .text("17603 Howling Wolf Run", { align: "center" })
-     .text("Parrish, Florida 34219", { align: "center" })
-     .text("(941) 799-1019", { align: "center" });
-
+  // ---------------- Company Address (from template) ----------------
+  const addrLines = (data.companyAddress || "").split("\n").filter(Boolean);
+  if (addrLines.length) {
+    doc.fontSize(10);
+    addrLines.forEach((line) => doc.text(line.trim(), { align: "center" }));
+  }
+  if (data.companyPhone) doc.text(data.companyPhone, { align: "center" });
   doc.moveDown(2);
 
   // ---------------- Invoice Title ----------------
@@ -625,10 +633,10 @@ ipcMain.handle("generate-invoice", async (_, data) => {
   }
 
   // ---------------- Description ----------------
-  doc.font("Helvetica-Bold").text("Description:", { underline: true }).moveDown(0.2);
-  doc.font("Helvetica")
-     .text(data.description || "Provide temporary tankless gravity flushing sanitary waste assemblies. BrandSafway Part #M6474.")
-     .moveDown(1);
+  if (data.description) {
+    doc.font("Helvetica-Bold").text("Description:", { underline: true }).moveDown(0.2);
+    doc.font("Helvetica").text(data.description).moveDown(1);
+  }
 
   // ---------------- Pricing ----------------
   doc.font("Helvetica-Bold").text("Invoice Sum:", { underline: true }).moveDown(0.2);
@@ -652,7 +660,6 @@ ipcMain.handle("generate-invoice", async (_, data) => {
     }
 
     doc.font("Helvetica")
-       .text(`Complete Temporary Toilet Assembly:`)
        .text(`Quantity ${budget.qty}: $${fmt(budget.productSubtotal)}`)
        .text(`Freight: $${fmt(budget.freight)}`);
 
@@ -677,15 +684,18 @@ ipcMain.handle("generate-invoice", async (_, data) => {
   }
 
   // ---------------- Terms & Conditions ----------------
-  doc.moveDown(1);
-  doc.font("Helvetica-Bold").text("Terms & Conditions:", { underline: true }).moveDown(0.2);
-  doc.font("Helvetica").text(data.terms || "No terms specified.");
+  if (data.terms) {
+    doc.moveDown(1);
+    doc.font("Helvetica-Bold").text("Terms & Conditions:", { underline: true }).moveDown(0.2);
+    doc.font("Helvetica").text(data.terms);
+  }
 
   doc.moveDown(2);
 
   // ---------------- Footer ----------------
-  doc.text("Thank you for your business.", { align: "left" });
-  doc.text(data.companyName || "MonoStock", { align: "left" });
+  if (data.thankYouText) doc.text(data.thankYouText, { align: "left" });
+  if (data.companyName) doc.text(data.companyName, { align: "left" });
+  if (data.customNote) doc.text(data.customNote, { align: "left" });
 
   doc.end();
 

@@ -363,12 +363,17 @@
         y += 20;
       }
 
-      // ── Company address ──
+      // ── Company address (from template) ──
       doc.setFontSize(10).setFont('helvetica', 'normal');
-      ['17603 Howling Wolf Run', 'Parrish, Florida 34219', '(941) 799-1019'].forEach(line => {
-        doc.text(line, W / 2, y, { align: 'center' });
+      const addrLines = (data.companyAddress || '').split('\n').filter(Boolean);
+      addrLines.forEach(line => {
+        doc.text(line.trim(), W / 2, y, { align: 'center' });
         y += 14;
       });
+      if (data.companyPhone) {
+        doc.text(data.companyPhone, W / 2, y, { align: 'center' });
+        y += 14;
+      }
       y += 16;
 
       // ── INVOICE title ──
@@ -421,9 +426,7 @@
 
       if (data.notes) section('Notes', [data.notes]);
 
-      section('Description', [
-        data.description || 'Provide temporary tankless gravity flushing sanitary waste assemblies. BrandSafway Part #M6474.'
-      ]);
+      if (data.description) section('Description', [data.description]);
 
       // ── Pricing ──
       doc.setFont('helvetica', 'bold');
@@ -444,7 +447,6 @@
           doc.text(txt, mg, y); y += 13;
         };
 
-        doc.text('Complete Temporary Toilet Assembly:', mg, y); y += 13;
         doc.text(`Quantity ${bud.qty}: $${fmt(bud.productSubtotal)}`, mg, y); y += 13;
         doc.text(`Freight: $${fmt(bud.freight)}`, mg, y); y += 13;
         items.filter(i => (i.taxOption || 'before') === 'before').forEach(liRender);
@@ -462,24 +464,23 @@
       }
 
       // ── Terms ──
-      y += 8;
-      doc.setFont('helvetica', 'bold');
-      doc.text('Terms & Conditions:', mg, y);
-      doc.setLineWidth(0.5);
-      doc.line(mg, y + 2, mg + doc.getTextWidth('Terms & Conditions:'), y + 2);
-      y += 15;
-      doc.setFont('helvetica', 'normal');
-      const terms = data.terms || 'No terms specified.';
-      const termsWrapped = doc.splitTextToSize(terms, cw);
-      doc.text(termsWrapped, mg, y);
-      y += termsWrapped.length * 13 + 20;
+      if (data.terms) {
+        y += 8;
+        doc.setFont('helvetica', 'bold');
+        doc.text('Terms & Conditions:', mg, y);
+        doc.setLineWidth(0.5);
+        doc.line(mg, y + 2, mg + doc.getTextWidth('Terms & Conditions:'), y + 2);
+        y += 15;
+        doc.setFont('helvetica', 'normal');
+        const termsWrapped = doc.splitTextToSize(data.terms, cw);
+        doc.text(termsWrapped, mg, y);
+        y += termsWrapped.length * 13 + 20;
+      }
 
       // ── Footer ──
-      const footerCompany = data.companyName || (() => {
-        try { return JSON.parse(localStorage.getItem('appSettings') || '{}').companyName || 'MonoStock'; } catch (_) { return 'MonoStock'; }
-      })();
-      doc.text('Thank you for your business.', mg, y); y += 13;
-      doc.text(footerCompany, mg, y);
+      if (data.thankYouText) { doc.text(data.thankYouText, mg, y); y += 13; }
+      if (data.companyName) { doc.text(data.companyName, mg, y); y += 13; }
+      if (data.customNote) { doc.text(data.customNote, mg, y); }
 
       const safeC = (data.customerName || 'Customer').replace(/[^a-z0-9]/gi, '_');
       const fileName = `Invoice_${data.orderNumber || 'Unknown'}_${safeC}_${data.quantity || 0}.pdf`;
