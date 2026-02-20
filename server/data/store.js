@@ -80,7 +80,8 @@ async function replaceTable(table, items, userId) {
   }
   if (items.length > 0) {
     const rows = items.map(item => {
-      const row = { id: item.id, data: item };
+      const id = item.id != null ? String(item.id) : uuidv4();
+      const row = { id, data: { ...item, id } };
       if (userId) row.user_id = userId;
       return row;
     });

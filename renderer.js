@@ -104,11 +104,15 @@ function loadAndRenderDashboard() {
 function saveDashboard() {
   window.dashboardAPI.save(dashboardData)
     .then(result => {
-      if (result && !result.success) showToast("Error saving data. See console.", "error");
+      if (result && !result.success) {
+        const msg = result.error || "Error saving data.";
+        console.error("Failed to save dashboard:", msg);
+        showToast(msg, "error");
+      }
     })
     .catch(err => {
       console.error("Failed to save dashboard:", err);
-      showToast("Error saving data. Check console.", "error");
+      showToast(err?.message || "Error saving data. Check console.", "error");
     });
 }
 
@@ -4920,8 +4924,9 @@ function showCustomerForm(editIndex = undefined) {
   form.addEventListener("click", (e) => { if (e.target === form) form.remove(); });
 
   document.getElementById("cancelCust").onclick = () => form.remove();
-  document.getElementById("saveCust").onclick = () => {
+  document.getElementById("saveCust").onclick = async () => {
     const errorsEl = document.getElementById("cust-form-errors");
+    const saveBtn = document.getElementById("saveCust");
     const name = document.getElementById("cust-name").value.trim();
 
     if (!name) {
@@ -4930,8 +4935,10 @@ function showCustomerForm(editIndex = undefined) {
       return;
     }
 
+    errorsEl.style.display = "none";
+
     const newCust = {
-      id: editIndex !== undefined ? dashboardData.customers[editIndex].id : dashboardData.customers.length + 1,
+      id: editIndex !== undefined ? dashboardData.customers[editIndex].id : crypto.randomUUID(),
       name: name,
       company: document.getElementById("cust-company").value.trim(),
       phone: document.getElementById("cust-phone").value.trim(),
@@ -4941,10 +4948,23 @@ function showCustomerForm(editIndex = undefined) {
     };
     if (editIndex !== undefined) dashboardData.customers[editIndex] = newCust;
     else dashboardData.customers.push(newCust);
-    saveDashboard();
-    form.remove();
-    showToast(editIndex !== undefined ? "Customer updated!" : "New customer added!", "success");
-    renderCustomersPage();
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    const result = await window.dashboardAPI.save(dashboardData);
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save Customer";
+
+    if (result && result.success) {
+      form.remove();
+      showToast(editIndex !== undefined ? "Customer updated!" : "New customer added!", "success");
+      renderCustomersPage();
+    } else {
+      const msg = result?.error || "Failed to save. Check console.";
+      errorsEl.textContent = msg;
+      errorsEl.style.display = "block";
+      showToast(msg, "error");
+    }
   };
 }
 
