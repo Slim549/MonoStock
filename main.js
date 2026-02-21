@@ -690,6 +690,18 @@ ipcMain.handle("generate-invoice", async (_, data) => {
     doc.font("Helvetica").text(data.terms);
   }
 
+  // ---------------- Custom Fields (Exclusions, legal text, etc.) ----------------
+  const rawCustom = data.customFields;
+  const customFields = Array.isArray(rawCustom) ? rawCustom : (rawCustom && typeof rawCustom === "object" ? [rawCustom] : []);
+  for (const f of customFields) {
+    if (typeof f !== "object" || !f) continue;
+    const hasContent = ((f.label || "").trim() || (f.value || "").trim());
+    if (!hasContent) continue;
+    doc.moveDown(1);
+    doc.font("Helvetica-Bold").text((f.label || "Custom").trim() + ":", { underline: true }).moveDown(0.2);
+    doc.font("Helvetica").text(String(f.value || ""));
+  }
+
   doc.moveDown(2);
 
   // ---------------- Footer ----------------

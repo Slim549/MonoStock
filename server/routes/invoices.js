@@ -164,6 +164,17 @@ function generatePDF(data, res) {
     doc.font('Helvetica-Bold').text('Terms & Conditions:', { underline: true }).moveDown(0.2);
     doc.font('Helvetica').text(data.terms);
   }
+
+  const rawCustom = data.customFields;
+  const customFields = Array.isArray(rawCustom) ? rawCustom : (rawCustom && typeof rawCustom === 'object' ? [rawCustom] : []);
+  customFields.forEach((f) => {
+    if (typeof f !== 'object' || !f) return;
+    if (!((f.label || '').trim() || (f.value || '').trim())) return;
+    doc.moveDown(1);
+    doc.font('Helvetica-Bold').text((f.label || 'Custom').trim() + ':', { underline: true }).moveDown(0.2);
+    doc.font('Helvetica').text(String(f.value || ''));
+  });
+
   doc.moveDown(2);
 
   if (data.thankYouText) doc.text(data.thankYouText, { align: 'left' });

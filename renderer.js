@@ -38,6 +38,15 @@ if (!appDiv) {
   console.error("appDiv not found! Make sure <div id='app'> exists in index.html");
 }
 
+// ── Popstate: handle browser back/forward when on auth/landing pages ──
+window.addEventListener("popstate", () => {
+  if (currentUser) return;
+  const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+  if (path === "/signin") renderLoginPage();
+  else if (path === "/signup") renderSignupPage();
+  else if (path === "/" || path === "") renderLandingPage();
+});
+
 // Startup — check auth, then load dashboard.
 // Deferred so all top-level const/let declarations are initialised first.
 setTimeout(async () => {
@@ -179,7 +188,9 @@ const translations = {
     kpiLowStockItems: "Low stock items",
     // Dashboard cards
     pendingOrdersTitle: "Pending Orders", orderStatusChart: "Order Status Chart",
-    revenueOverTime: "Revenue Over Time", costVsSellTitle: "Cost vs Sell Price Breakdown",
+    dashboardChartsTitle: "Charts", stockByProduct: "Stock by Product",
+    customerUnitsChart: "Customers by Units", revenueOverTime: "Revenue Over Time",
+    costVsSellTitle: "Cost vs Sell Price Breakdown",
     customerProfitTitle: "Customer Profitability Ranking", alertsTitle: "Alerts",
     // Table headers
     thOrder: "Order", thCustomer: "Customer", thCompany: "Company", thUnits: "Units",
@@ -252,7 +263,9 @@ const translations = {
     kpiPerBudgetedOrder: "Por pedido presupuestado", kpiPendingOrders: "Pedidos pendientes",
     kpiLowStockItems: "Artículos con bajo stock",
     pendingOrdersTitle: "Pedidos Pendientes", orderStatusChart: "Gráfico de Estado",
-    revenueOverTime: "Ingresos en el Tiempo", costVsSellTitle: "Costo vs Precio de Venta",
+    dashboardChartsTitle: "Gráficos", stockByProduct: "Stock por Producto",
+    customerUnitsChart: "Clientes por Unidades", revenueOverTime: "Ingresos en el Tiempo",
+    costVsSellTitle: "Costo vs Precio de Venta",
     customerProfitTitle: "Rentabilidad por Cliente", alertsTitle: "Alertas",
     thOrder: "Pedido", thCustomer: "Cliente", thCompany: "Empresa", thUnits: "Unidades",
     thStatus: "Estado", thDate: "Fecha", thAccounting: "Contabilidad", thLocation: "Ubicación",
@@ -316,7 +329,9 @@ const translations = {
     kpiPerBudgetedOrder: "Par commande budgétée", kpiPendingOrders: "Commandes en attente",
     kpiLowStockItems: "Articles en rupture",
     pendingOrdersTitle: "Commandes en Attente", orderStatusChart: "Graphique des Statuts",
-    revenueOverTime: "Revenu au Fil du Temps", costVsSellTitle: "Coût vs Prix de Vente",
+    dashboardChartsTitle: "Graphiques", stockByProduct: "Stock par Produit",
+    customerUnitsChart: "Clients par Unités", revenueOverTime: "Revenu au Fil du Temps",
+    costVsSellTitle: "Coût vs Prix de Vente",
     customerProfitTitle: "Rentabilité par Client", alertsTitle: "Alertes",
     thOrder: "Commande", thCustomer: "Client", thCompany: "Entreprise", thUnits: "Unités",
     thStatus: "Statut", thDate: "Date", thAccounting: "Comptabilité", thLocation: "Emplacement",
@@ -400,14 +415,41 @@ function getInvoiceTemplate() {
     termsDefault: t.termsDefault ?? "",
     thankYouText: t.thankYouText ?? "",
     customNote: t.customNote ?? "",
-    companyName: t.companyName ?? s.companyName ?? ""
+    companyName: t.companyName ?? s.companyName ?? "",
+    customFields: Array.isArray(t.customFields) ? t.customFields : []
   };
 }
 
 function saveInvoiceTemplate(template) {
   const s = getSettings();
   s.invoiceTemplate = { ...(s.invoiceTemplate || {}), ...template };
+  if (Array.isArray(template.customFields)) {
+    s.invoiceTemplate.customFields = template.customFields;
+  }
   saveSettings(s);
+}
+
+/** Flush invoice form to storage when leaving Invoices page (ensures custom fields are saved) */
+function flushInvoiceTemplateIfOnPage() {
+  if (window.currentPage !== "invoices") return;
+  const list = document.getElementById("inv-custom-fields-list");
+  const invAddr = document.getElementById("inv-company-address");
+  if (!list || !invAddr) return;
+  const customFields = Array.from(list.querySelectorAll(".inv-custom-field-row")).map(row => ({
+    label: (row.querySelector(".inv-cf-label")?.value ?? "").trim(),
+    value: row.querySelector(".inv-cf-value")?.value ?? ""
+  }));
+  saveInvoiceTemplate({
+    logoPath: getInvoiceTemplate().logoPath,
+    companyAddress: invAddr?.value ?? "",
+    companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
+    descriptionDefault: document.getElementById("inv-description")?.value ?? "",
+    termsDefault: document.getElementById("inv-terms")?.value ?? "",
+    thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
+    customNote: document.getElementById("inv-custom-note")?.value ?? "",
+    companyName: document.getElementById("inv-company-name")?.value ?? "",
+    customFields
+  });
 }
 
 function applySettings() {
@@ -612,7 +654,7 @@ function renderInvoicesPage() {
 
         <div class="form-group" style="margin-bottom:20px;">
           <label style="font-weight:600;">Description (default when order has none)</label>
-          <textarea id="inv-description" rows="4" placeholder="Choose order decription. If left blank, the order description will be used." style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.descriptionDefault)}</textarea>
+          <textarea id="inv-description" rows="4" placeholder="Choose order decription. If left blank, the order description will not be used" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text); resize:vertical;">${esc(tmpl.descriptionDefault)}</textarea>
         </div>
 
         <div class="form-group" style="margin-bottom:20px;">
@@ -635,7 +677,14 @@ function renderInvoicesPage() {
           <input type="text" id="inv-company-name" placeholder="Company or brand name" value="${esc(tmpl.companyName)}" style="width:100%; padding:10px; border:2px solid var(--input-border); border-radius:8px; background:var(--input-bg); color:var(--input-text);">
         </div>
 
-        <button id="inv-save" style="background:var(--success-color); padding:12px 24px; font-weight:600;">Save Template</button>
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-weight:600;">Custom Fields</label>
+          <p style="font-size:0.9em; opacity:0.8; margin-bottom:12px;">Add sections like Exclusions, disclaimers, or other legal text. Each appears as a labeled block on your invoice. Custom fields are saved automatically as you type.</p>
+          <div id="inv-custom-fields-list"></div>
+          <button type="button" id="inv-add-custom-field" style="padding:8px 16px; background:var(--info-color); margin-top:8px;">+ Add Custom Field</button>
+        </div>
+
+        <button type="button" id="inv-save" style="background:var(--success-color); padding:12px 24px; font-weight:600;">Save Template</button>
       </div>
 
       <div class="invoice-preview card" style="padding:24px; background:var(--card-bg);">
@@ -652,6 +701,7 @@ function renderInvoicesPage() {
           <p style="opacity:0.6; font-size:11px;"><em>Invoice #, Date, Order/Customer info come from each order.</em></p>
           <p><strong>Description:</strong> ${tmpl.descriptionDefault ? esc(tmpl.descriptionDefault).substring(0, 80) + (tmpl.descriptionDefault.length > 80 ? "…" : "") : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
           <p><strong>Terms:</strong> ${tmpl.termsDefault ? esc(tmpl.termsDefault).substring(0, 60) + "…" : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+          ${(tmpl.customFields || []).filter(f => f.label || f.value).map(f => `<p style="margin-top:12px;"><strong>${esc(f.label || "Custom")}:</strong> ${esc((f.value || "").substring(0, 120))}${(f.value || "").length > 120 ? "…" : ""}</p>`).join("")}
           <p style="margin-top:16px;">${tmpl.thankYouText || "<span style='opacity:0.4'>[Thank you message]</span>"}</p>
           <p>${tmpl.companyName || "<span style='opacity:0.4'>[Company name]</span>"}</p>
           ${tmpl.customNote ? `<p style="opacity:0.8; font-size:11px;">${esc(tmpl.customNote).substring(0, 60)}…</p>` : ""}
@@ -666,25 +716,15 @@ function renderInvoicesPage() {
     </style>
   `;
 
-  const saveFromForm = () => {
-    const template = {
-      logoPath: tmpl.logoPath,
-      companyAddress: document.getElementById("inv-company-address")?.value ?? "",
-      companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
-      descriptionDefault: document.getElementById("inv-description")?.value ?? "",
-      termsDefault: document.getElementById("inv-terms")?.value ?? "",
-      thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
-      customNote: document.getElementById("inv-custom-note")?.value ?? "",
-      companyName: document.getElementById("inv-company-name")?.value ?? ""
-    };
-    saveInvoiceTemplate(template);
-    showToast("Invoice template saved", "success");
-    renderInvoicesPage();
+  const collectCustomFields = () => {
+    const list = document.getElementById("inv-custom-fields-list");
+    if (!list) return [];
+    return Array.from(list.querySelectorAll(".inv-custom-field-row")).map(row => ({
+      label: (row.querySelector(".inv-cf-label")?.value ?? "").trim(),
+      value: row.querySelector(".inv-cf-value")?.value ?? ""
+    }));
   };
 
-  document.getElementById("inv-save")?.addEventListener("click", saveFromForm);
-
-  // Live preview update as user types
   const updatePreview = () => {
     const t = {
       logoPath: tmpl.logoPath,
@@ -694,11 +734,15 @@ function renderInvoicesPage() {
       termsDefault: document.getElementById("inv-terms")?.value ?? "",
       thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
       customNote: document.getElementById("inv-custom-note")?.value ?? "",
-      companyName: document.getElementById("inv-company-name")?.value ?? ""
+      companyName: document.getElementById("inv-company-name")?.value ?? "",
+      customFields: collectCustomFields()
     };
     const prev = document.getElementById("invoice-preview-content");
     if (!prev) return;
     const esc = (v) => (v || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const customFieldsHtml = (t.customFields || []).filter(f => f.label || f.value).map(f =>
+      `<p style="margin-top:12px;"><strong>${esc(f.label || "Custom")}:</strong> ${esc((f.value || "").substring(0, 120))}${(f.value || "").length > 120 ? "…" : ""}</p>`
+    ).join("");
     prev.innerHTML = `<div style="color:#212529;">
       <div style="text-align:center; margin-bottom:16px;">
         ${t.logoPath ? `<img src="${t.logoPath.startsWith("data:") ? t.logoPath : "file:///" + (t.logoPath || "").replace(/\\\\/g, "/")}" style="max-width:180px; max-height:60px;">` : '<div style="opacity:0.4;">[Logo]</div>'}
@@ -711,13 +755,106 @@ function renderInvoicesPage() {
       <p style="opacity:0.6; font-size:11px;"><em>Invoice #, Date, Order/Customer info come from each order.</em></p>
       <p><strong>Description:</strong> ${t.descriptionDefault ? esc(t.descriptionDefault).substring(0, 80) + (t.descriptionDefault.length > 80 ? "…" : "") : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
       <p><strong>Terms:</strong> ${t.termsDefault ? esc(t.termsDefault).substring(0, 60) + "…" : "<span style='opacity:0.4'>[From order or blank]</span>"}</p>
+      ${customFieldsHtml}
       <p style="margin-top:16px;">${t.thankYouText || "<span style='opacity:0.4'>[Thank you message]</span>"}</p>
       <p>${t.companyName || "<span style='opacity:0.4'>[Company name]</span>"}</p>
       ${t.customNote ? `<p style="opacity:0.8; font-size:11px;">${esc(t.customNote).substring(0, 60)}…</p>` : ""}
     </div>`;
   };
+
+  const renderCustomFieldsList = () => {
+    const list = document.getElementById("inv-custom-fields-list");
+    if (!list) return;
+    const fields = Array.isArray(tmpl.customFields) ? tmpl.customFields : [];
+    list.innerHTML = fields.map((f, i) => `
+      <div class="inv-custom-field-row" data-index="${i}" style="margin-bottom:12px; padding:12px; border:1px solid var(--border-color); border-radius:8px; background:var(--input-bg);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <input type="text" class="inv-cf-label" placeholder="Label (e.g. Exclusions)" value="${esc(f.label || "")}" style="flex:1; padding:8px 12px; border:2px solid var(--input-border); border-radius:6px; margin-right:8px;">
+          <button type="button" class="inv-cf-remove" data-index="${i}" style="padding:6px 12px; background:var(--danger-color); color:white; border:none; border-radius:6px; cursor:pointer;">Remove</button>
+        </div>
+        <textarea class="inv-cf-value" rows="3" placeholder="Content…" style="width:100%; padding:8px 12px; border:2px solid var(--input-border); border-radius:6px; resize:vertical;">${esc(f.value || "")}</textarea>
+      </div>
+    `).join("");
+    list.querySelectorAll(".inv-cf-remove").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = parseInt(btn.dataset.index, 10);
+        const arr = [...(tmpl.customFields || [])];
+        arr.splice(idx, 1);
+        saveInvoiceTemplate({ ...getInvoiceTemplate(), customFields: arr });
+        renderInvoicesPage();
+      });
+    });
+    let debounceSave = null;
+    const saveCustomFieldsNow = () => {
+      if (debounceSave) clearTimeout(debounceSave);
+      debounceSave = null;
+      saveInvoiceTemplate({ ...getInvoiceTemplate(), customFields: collectCustomFields() });
+    };
+    const debouncedSaveCustomFields = () => {
+      if (debounceSave) clearTimeout(debounceSave);
+      debounceSave = setTimeout(saveCustomFieldsNow, 400);
+    };
+    list.querySelectorAll(".inv-cf-label, .inv-cf-value").forEach(el => {
+      el.addEventListener("input", () => {
+        updatePreview();
+        debouncedSaveCustomFields();
+      });
+      el.addEventListener("blur", saveCustomFieldsNow);
+    });
+  };
+
+  renderCustomFieldsList();
+
+  const saveFromForm = () => {
+    const template = {
+      logoPath: tmpl.logoPath,
+      companyAddress: document.getElementById("inv-company-address")?.value ?? "",
+      companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
+      descriptionDefault: document.getElementById("inv-description")?.value ?? "",
+      termsDefault: document.getElementById("inv-terms")?.value ?? "",
+      thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
+      customNote: document.getElementById("inv-custom-note")?.value ?? "",
+      companyName: document.getElementById("inv-company-name")?.value ?? "",
+      customFields: collectCustomFields()
+    };
+    saveInvoiceTemplate(template);
+    showToast("Invoice template saved", "success");
+    renderInvoicesPage();
+  };
+
+  document.getElementById("inv-save")?.addEventListener("click", saveFromForm);
+
+  document.getElementById("inv-add-custom-field")?.addEventListener("click", () => {
+    const arr = [...(tmpl.customFields || []), { label: "", value: "" }];
+    saveInvoiceTemplate({ ...getInvoiceTemplate(), customFields: arr });
+    renderInvoicesPage();
+  });
+
+  let debounceAll = null;
+  const saveFullTemplateNow = () => {
+    if (debounceAll) clearTimeout(debounceAll);
+    debounceAll = null;
+    saveInvoiceTemplate({
+      logoPath: tmpl.logoPath,
+      companyAddress: document.getElementById("inv-company-address")?.value ?? "",
+      companyPhone: document.getElementById("inv-company-phone")?.value ?? "",
+      descriptionDefault: document.getElementById("inv-description")?.value ?? "",
+      termsDefault: document.getElementById("inv-terms")?.value ?? "",
+      thankYouText: document.getElementById("inv-thank-you")?.value ?? "",
+      customNote: document.getElementById("inv-custom-note")?.value ?? "",
+      companyName: document.getElementById("inv-company-name")?.value ?? "",
+      customFields: collectCustomFields()
+    });
+  };
+  const debouncedSaveFull = () => {
+    if (debounceAll) clearTimeout(debounceAll);
+    debounceAll = setTimeout(saveFullTemplateNow, 500);
+  };
   ["inv-company-address", "inv-company-phone", "inv-description", "inv-terms", "inv-thank-you", "inv-custom-note", "inv-company-name"].forEach(id => {
-    document.getElementById(id)?.addEventListener("input", updatePreview);
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("input", () => { updatePreview(); debouncedSaveFull(); });
+    }
   });
 
   document.getElementById("inv-pick-logo")?.addEventListener("click", () => {
@@ -1327,14 +1464,210 @@ function formatDate(dateStr) {
 
 
 // ════════════════════════════════════════════════════════════
-// AUTH PAGES — Login, Signup, Profile
+// LANDING PAGE & AUTH — Landing, Login, Signup, Profile
 // ════════════════════════════════════════════════════════════
+
+function navigateTo(path) {
+  if (window.history && window.history.pushState) {
+    window.history.pushState({}, '', path);
+  }
+  const p = (path || '/').replace(/\/+$/, '') || '/';
+  if (p === '/signin') renderLoginPage();
+  else if (p === '/signup') renderSignupPage();
+  else if (p === '/' || p === '') renderLandingPage();
+}
+
+function renderLandingPage() {
+  if (!appDiv) return;
+  window.currentPage = "landing";
+
+  const nav = document.getElementById("nav");
+  if (nav) nav.style.display = "none";
+  const menubar = document.getElementById("menubar");
+  if (menubar) menubar.style.display = "none";
+  settingsBtn.style.display = "none";
+  userAvatarBtn.style.display = "none";
+  document.body.style.paddingTop = "0";
+  appDiv.classList.add("landing-active");
+
+  appDiv.innerHTML = `
+    <header class="landing-header">
+      <a href="/" class="landing-brand" id="landing-brand">
+        <img src="assets/cube-logo.png" alt="MonoStock">
+        <span class="landing-brand-name">MonoStock</span>
+      </a>
+      <div class="landing-header-cta">
+        <a href="/signup" class="btn-primary" id="landing-get-started">Get Started</a>
+        <a href="/signin" class="btn-secondary" id="landing-sign-in">Sign In</a>
+      </div>
+    </header>
+
+    <div class="landing-hero-block">
+      <div class="landing-hero">
+        <h1>Know Your Numbers. Instantly.</h1>
+        <p class="subheadline">Track orders, manage inventory, and monitor profit margins—simple and clear. No spreadsheets.</p>
+        <div class="landing-cta-row">
+          <a href="/signup" class="landing-hero-cta-primary" id="landing-hero-get-started">Get Started</a>
+          <a href="/signin" class="landing-hero-cta-secondary" id="landing-hero-sign-in">Sign In</a>
+        </div>
+      </div>
+    </div>
+
+    <section class="landing-section">
+      <h2 class="landing-section-title scroll-animate">Everything you need</h2>
+      <div class="landing-features">
+        <div class="card landing-feature-card scroll-animate scroll-animate-delay-1">
+          <h3>Track Orders</h3>
+          <p>Log and organize every order with status, customer details, and budgets in one place.</p>
+        </div>
+        <div class="card landing-feature-card scroll-animate scroll-animate-delay-2">
+          <h3>Manage Inventory</h3>
+          <p>See what's in stock, what's required, and what you need to reorder—at a glance.</p>
+        </div>
+        <div class="card landing-feature-card scroll-animate scroll-animate-delay-3">
+          <h3>Monitor Profit Margins</h3>
+          <p>Real margins per order and per customer. Stop guessing—know exactly where you stand.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section landing-demo-section">
+      <h2 class="landing-demo-headline scroll-animate">Try it yourself — create orders below</h2>
+      <p class="landing-demo-sub scroll-animate scroll-animate-delay-1">No account needed. Nothing is saved. Just see how easy it is.</p>
+      <div class="landing-demo scroll-animate scroll-animate-delay-2">
+        <div class="landing-orders-demo" id="landing-orders-demo">
+          <form class="landing-orders-form" id="landing-order-form">
+            <div class="landing-orders-form-grid">
+              <div class="form-group">
+                <label for="demo-customer">Customer name</label>
+                <input type="text" id="demo-customer" placeholder="e.g. Acme Corp" required>
+              </div>
+              <div class="form-group">
+                <label for="demo-company">Company</label>
+                <input type="text" id="demo-company" placeholder="e.g. Acme Industries">
+              </div>
+              <div class="form-group">
+                <label for="demo-qty">Quantity</label>
+                <input type="number" id="demo-qty" placeholder="1" min="1" value="1">
+              </div>
+            </div>
+            <button type="submit" id="demo-add-order-btn">+ Add Order</button>
+          </form>
+          <div class="landing-orders-table-wrap">
+            <div class="landing-orders-table">
+              <table>
+                <thead><tr><th>Order #</th><th>Customer</th><th>Company</th><th>Qty</th><th>Status</th></tr></thead>
+                <tbody id="demo-orders-tbody"><tr><td colspan="5" class="demo-empty-msg">No orders yet — add one above!</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section landing-how-section">
+      <h2 class="landing-how-title scroll-animate">How it works</h2>
+      <div class="landing-how-it-works-wrap">
+      <div class="landing-how-it-works">
+        <div class="landing-step scroll-animate scroll-animate-delay-1">
+          <div class="landing-step-num">1</div>
+          <h3>Add products</h3>
+          <p>Define your products and materials.</p>
+        </div>
+        <div class="landing-step scroll-animate scroll-animate-delay-2">
+          <div class="landing-step-num">2</div>
+          <h3>Log orders</h3>
+          <p>Enter customer orders and build budgets.</p>
+        </div>
+        <div class="landing-step scroll-animate scroll-animate-delay-3">
+          <div class="landing-step-num">3</div>
+          <h3>See real margins</h3>
+          <p>Track profit and margins instantly.</p>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <footer class="landing-footer scroll-animate">
+      MonoStock — Inventory, orders, and margins simplified.
+    </footer>
+  `;
+
+  ["landing-get-started", "landing-hero-get-started"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", (e) => { e.preventDefault(); navigateTo("/signup"); });
+  });
+  ["landing-sign-in", "landing-hero-sign-in"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", (e) => { e.preventDefault(); navigateTo("/signin"); });
+  });
+  const brand = document.getElementById("landing-brand");
+  if (brand) brand.addEventListener("click", (e) => { e.preventDefault(); window.scrollTo(0, 0); });
+
+  // Scroll-triggered animations
+  const scrollAnimated = appDiv.querySelectorAll(".scroll-animate");
+  if (typeof IntersectionObserver !== "undefined" && scrollAnimated.length) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("scroll-in");
+        }
+      });
+    }, { threshold: 0.1, rootMargin: "0px 0px -40px 0px" });
+    scrollAnimated.forEach((el) => observer.observe(el));
+  } else {
+    scrollAnimated.forEach((el) => el.classList.add("scroll-in"));
+  }
+
+  // Interactive demo: add orders (in-memory only, does not save)
+  const demoOrders = [];
+  function renderDemoOrders() {
+    const tbody = document.getElementById("demo-orders-tbody");
+    if (!tbody) return;
+    if (!demoOrders.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="demo-empty-msg">No orders yet — add one above!</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = demoOrders.map((o, i) => `
+      <tr class="${i === demoOrders.length - 1 ? 'demo-row-new' : ''}">
+        <td style="font-weight:600;">${o.orderNumber}</td>
+        <td>${(o.customerName || "").replace(/</g, "&lt;")}</td>
+        <td>${(o.customerCompany || "").replace(/</g, "&lt;")}</td>
+        <td style="text-align:center;">${o.quantity || 1}</td>
+        <td><span class="status-badge status-pending">Pending</span></td>
+      </tr>
+    `).join("");
+  }
+  const form = document.getElementById("landing-order-form");
+  if (form) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const customer = (document.getElementById("demo-customer")?.value || "").trim();
+      const company = (document.getElementById("demo-company")?.value || "").trim();
+      const qty = Math.max(1, parseInt(document.getElementById("demo-qty")?.value || "1", 10) || 1);
+      if (!customer) return;
+      const order = {
+        orderNumber: "ORD-" + Math.floor(1000 + Math.random() * 9000),
+        customerName: customer,
+        customerCompany: company,
+        quantity: qty,
+        status: "Pending"
+      };
+      demoOrders.push(order);
+      renderDemoOrders();
+      document.getElementById("demo-customer").value = "";
+      document.getElementById("demo-company").value = "";
+      document.getElementById("demo-qty").value = "1";
+    });
+  }
+}
 
 function renderLoginPage() {
   if (!appDiv) return;
   window.currentPage = "login";
 
   // Hide nav, settings gear, user avatar, and menubar while on login
+  appDiv.classList.remove("landing-active");
   const nav = document.getElementById("nav");
   if (nav) nav.style.display = "none";
   const menubar = document.getElementById("menubar");
@@ -1345,6 +1678,7 @@ function renderLoginPage() {
 
   appDiv.innerHTML = `
     <div style="max-width:420px; margin:60px auto; padding:0 20px;">
+      <p style="margin:0 0 24px; font-size:0.9em;"><a href="/" id="login-back-home" style="color:var(--info-color); text-decoration:none; font-weight:500;">← Back to home</a></p>
       <div style="text-align:center; margin-bottom:36px;">
         <img src="assets/cube-logo.png" alt="MonoStock" style="width:90px; height:90px; border-radius:18px; margin-bottom:12px;">
         <h1 style="margin:0 0 6px;">MonoStock</h1>
@@ -1371,7 +1705,8 @@ function renderLoginPage() {
     </div>
   `;
 
-  document.getElementById("goto-signup").onclick = (e) => { e.preventDefault(); renderSignupPage(); };
+  document.getElementById("login-back-home").onclick = (e) => { e.preventDefault(); navigateTo("/"); };
+  document.getElementById("goto-signup").onclick = (e) => { e.preventDefault(); navigateTo("/signup"); };
   document.getElementById("login-submit-btn").onclick = handleLogin;
   document.getElementById("login-password").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleLogin();
@@ -1420,6 +1755,7 @@ async function handleLogin() {
 function renderSignupPage() {
   if (!appDiv) return;
   window.currentPage = "signup";
+  appDiv.classList.remove("landing-active");
 
   // Hide nav, settings gear, user avatar, and menubar while on signup
   const nav = document.getElementById("nav");
@@ -1432,6 +1768,7 @@ function renderSignupPage() {
 
   appDiv.innerHTML = `
     <div style="max-width:420px; margin:60px auto; padding:0 20px;">
+      <p style="margin:0 0 24px; font-size:0.9em;"><a href="/" id="signup-back-home" style="color:var(--info-color); text-decoration:none; font-weight:500;">← Back to home</a></p>
       <div style="text-align:center; margin-bottom:36px;">
         <img src="assets/cube-logo.png" alt="MonoStock" style="width:90px; height:90px; border-radius:18px; margin-bottom:12px;">
         <h1 style="margin:0 0 6px;">Create Account</h1>
@@ -1466,7 +1803,8 @@ function renderSignupPage() {
     </div>
   `;
 
-  document.getElementById("goto-login").onclick = (e) => { e.preventDefault(); renderLoginPage(); };
+  document.getElementById("signup-back-home").onclick = (e) => { e.preventDefault(); navigateTo("/"); };
+  document.getElementById("goto-login").onclick = (e) => { e.preventDefault(); navigateTo("/signin"); };
   document.getElementById("signup-submit-btn").onclick = handleSignup;
   document.getElementById("signup-confirm").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSignup();
@@ -1803,7 +2141,10 @@ function renderNav(currentPage) {
   pages.forEach(p => {
     const btn = document.createElement("button");
     btn.innerText = p.name;
-    btn.onclick = p.fn;
+    btn.onclick = () => {
+      flushInvoiceTemplateIfOnPage();
+      p.fn();
+    };
     if (currentPage === p.id) btn.style.background = "#08215a";
     nav.appendChild(btn);
   });
@@ -2036,12 +2377,21 @@ function renderDashboard() {
     </div>` : ""}
 
     ${showStatus ? `<div class="card">
-      <h2>${t("orderStatusChart")}</h2>
+      <h2>${t("dashboardChartsTitle")}</h2>
       <div class="dashboard-charts-row" style="display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start;">
-        <div class="dashboard-chart-wrap" style="flex: 1; min-width: 280px; max-width: 500px; padding: 20px; min-height: 280px;">
+        <div class="dashboard-chart-wrap" style="flex: 1 1 280px; min-width: 0; max-width: 500px; padding: 20px; min-height: 280px;">
+          <h3 style="margin-top:0;">${t("orderStatusChart")}</h3>
           <canvas id="statusPieChart"></canvas>
         </div>
-        <div class="dashboard-chart-wrap" style="flex: 1; min-width: 280px; max-width: 600px; padding: 20px; min-height: 280px;">
+        <div class="dashboard-chart-wrap chart-clickable" style="flex: 1 1 280px; min-width: 0; max-width: 500px; padding: 20px; min-height: 280px;" onclick="renderInventoryPage()" title="${t("inventory")}">
+          <h3 style="margin-top:0;">${t("stockByProduct")}</h3>
+          <canvas id="stockByProductChart"></canvas>
+        </div>
+        <div class="dashboard-chart-wrap chart-clickable" style="flex: 1 1 280px; min-width: 0; max-width: 500px; padding: 20px; min-height: 280px;" onclick="renderCustomersPage()" title="${t("customers")}">
+          <h3 style="margin-top:0;">${t("customerUnitsChart")}</h3>
+          <canvas id="customerUnitsChart"></canvas>
+        </div>
+        <div class="dashboard-chart-wrap chart-clickable" style="flex: 1 1 280px; min-width: 0; max-width: 600px; padding: 20px; min-height: 280px;" onclick="renderOrdersPage()" title="${t("orders")}">
           <h3 style="margin-top:0;">${t("revenueOverTime")}</h3>
           <canvas id="revenueLineChart"></canvas>
         </div>
@@ -2052,7 +2402,7 @@ function renderDashboard() {
     ${showCost ? `<div class="card">
       <h2 class="card-collapse-header${tableCollapseState.costVsSell ? ' collapsed' : ''}" onclick="toggleTableCollapse('costVsSell')"><span class="collapse-icon">▼</span>${t("costVsSellTitle")}</h2>
       <div class="card-body" id="cardBody-costVsSell" style="display: ${tableCollapseState.costVsSell ? 'none' : 'block'};">
-        <div class="cost-vs-sell-chart-wrap" style="max-width: 700px; margin: 0 auto; min-height: 260px;">
+        <div class="cost-vs-sell-chart-wrap" style="max-width: min(700px, 100%); margin: 0 auto; height: 260px; min-height: 260px; width: 100%;">
           <canvas id="costVsSellChart"></canvas>
         </div>
         <div id="costVsSellTable" style="margin-top: 20px;"></div>
@@ -2141,6 +2491,8 @@ function renderDashboard() {
   // 2. Render the charts AFTER canvas exists in DOM
   if (showStatus) {
     renderStatusPieChart();
+    renderStockByProductChart();
+    renderCustomerUnitsChart();
     renderRevenueLineChart();
   }
   if (showCost)    renderCostVsSellChart();
@@ -2249,7 +2601,8 @@ function renderRevenueLineChart() {
           ticks: { callback: (v) => cur + v.toLocaleString(), font: { size: 11 } }
         },
         x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 45 } }
-      }
+      },
+      onClick: () => renderOrdersPage()
     }
   });
 }
@@ -2363,6 +2716,143 @@ function renderStatusPieChart() {
   });
 }
 
+// ---------------- STOCK BY PRODUCT BAR CHART ----------------
+function renderStockByProductChart() {
+  const ctx = document.getElementById("stockByProductChart")?.getContext("2d");
+  if (!ctx) return;
+
+  if (window.stockByProductChartInstance instanceof Chart) {
+    window.stockByProductChartInstance.destroy();
+  }
+
+  const inventory = dashboardData.inventory || [];
+  const items = inventory
+    .filter(i => (i.material || "").trim())
+    .map(i => ({ material: (i.material || "").trim(), inStock: parseInt(i.inStock, 10) || 0 }))
+    .sort((a, b) => b.inStock - a.inStock)
+    .slice(0, 15);
+
+  if (!items.length) {
+    ctx.canvas.parentElement.innerHTML = "<p style='opacity:0.5; text-align:center; padding:40px 0;'>No inventory data yet.</p>";
+    return;
+  }
+
+  const labels = items.map(i => i.material);
+  const data = items.map(i => i.inStock);
+
+  window.stockByProductChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: t("thInStock"),
+        data,
+        backgroundColor: "rgba(59, 130, 246, 0.75)",
+        borderColor: "#3b82f6",
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      indexAxis: "y",
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: { label: (tip) => `${tip.parsed.x} ${t("unitLabel")}s` }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { color: "rgba(0, 0, 0, 0.05)" },
+          ticks: { font: { size: 11 } }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, maxRotation: 0 }
+        }
+      },
+      onClick: () => renderInventoryPage()
+    }
+  });
+}
+
+// ---------------- CUSTOMERS BY UNITS BAR CHART ----------------
+function renderCustomerUnitsChart() {
+  const ctx = document.getElementById("customerUnitsChart")?.getContext("2d");
+  if (!ctx) return;
+
+  if (window.customerUnitsChartInstance instanceof Chart) {
+    window.customerUnitsChartInstance.destroy();
+  }
+
+  const orders = dashboardData.orders || [];
+  const unitsByCustomer = {};
+  orders.forEach(o => {
+    const name = (o.customerName || "—").trim() || "—";
+    unitsByCustomer[name] = (unitsByCustomer[name] || 0) + (Number(o.quantity) || 0);
+  });
+
+  const items = Object.entries(unitsByCustomer)
+    .map(([customer, units]) => ({ customer, units }))
+    .sort((a, b) => b.units - a.units)
+    .slice(0, 15);
+
+  if (!items.length) {
+    ctx.canvas.parentElement.innerHTML = "<p style='opacity:0.5; text-align:center; padding:40px 0;'>No order data yet.</p>";
+    return;
+  }
+
+  const labels = items.map(i => i.customer);
+  const data = items.map(i => i.units);
+
+  window.customerUnitsChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: t("thUnits"),
+        data,
+        backgroundColor: "rgba(139, 92, 246, 0.75)",
+        borderColor: "#8b5cf6",
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      indexAxis: "y",
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(0, 0, 0, 0.8)",
+          padding: 12,
+          cornerRadius: 8,
+          callbacks: { label: (tip) => `${tip.parsed.x} ${t("unitLabel")}s` }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { color: "rgba(0, 0, 0, 0.05)" },
+          ticks: { font: { size: 11 } }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { font: { size: 11 }, maxRotation: 0 }
+        }
+      },
+      onClick: () => renderCustomersPage()
+    }
+  });
+}
+
 // ---------------- SHOW ORDERS FOR SLICE ----------------
 function renderOrderList(selectedStatus) {
   const orderListDiv = document.getElementById("orderList");
@@ -2468,7 +2958,7 @@ function renderCostVsSellChart() {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: {
           position: "top",
@@ -2499,7 +2989,9 @@ function renderCostVsSellChart() {
         },
         x: {
           grid: { display: false },
-          ticks: { font: { size: 12 } }
+          ticks: { font: { size: 12 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 12 },
+          barPercentage: 0.8,
+          categoryPercentage: 0.9
         }
       }
     }
@@ -4996,7 +5488,8 @@ function generateInvoice(index) {
     companyAddress: tmpl.companyAddress || "",
     companyPhone: tmpl.companyPhone || "",
     thankYouText: tmpl.thankYouText || "",
-    customNote: tmpl.customNote || ""
+    customNote: tmpl.customNote || "",
+    customFields: JSON.parse(JSON.stringify(Array.isArray(tmpl.customFields) ? tmpl.customFields : []))
   };
 
   showInvoiceLoadingOverlay(true);

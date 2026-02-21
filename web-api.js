@@ -477,6 +477,25 @@
         y += termsWrapped.length * 13 + 20;
       }
 
+      // ── Custom Fields (Exclusions, legal text, etc.) ──
+      const rawCustom = data.customFields;
+      const customFields = Array.isArray(rawCustom) ? rawCustom : (rawCustom && typeof rawCustom === 'object' ? [rawCustom] : []);
+      customFields.forEach((f) => {
+        if (typeof f !== 'object' || !f) return;
+        if (!((f.label || '').trim() || (f.value || '').trim())) return;
+        y += 8;
+        doc.setFont('helvetica', 'bold');
+        const label = ((f.label || 'Custom').trim()) + ':';
+        doc.text(label, mg, y);
+        doc.setLineWidth(0.5);
+        doc.line(mg, y + 2, mg + doc.getTextWidth(label), y + 2);
+        y += 15;
+        doc.setFont('helvetica', 'normal');
+        const valWrapped = doc.splitTextToSize(String(f.value || ''), cw);
+        doc.text(valWrapped, mg, y);
+        y += valWrapped.length * 13 + 8;
+      });
+
       // ── Footer ──
       if (data.thankYouText) { doc.text(data.thankYouText, mg, y); y += 13; }
       if (data.companyName) { doc.text(data.companyName, mg, y); y += 13; }
