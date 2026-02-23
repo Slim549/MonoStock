@@ -406,6 +406,29 @@
     });
   }
 
+  // ── Settings sync ──
+
+  async function loadSettings() {
+    try {
+      return await apiJSON('/api/settings');
+    } catch (e) {
+      console.warn('[api-client] loadSettings failed:', e.message);
+      return { success: false, preferences: {} };
+    }
+  }
+
+  async function saveSettingsToServer(preferences) {
+    try {
+      return await apiJSON('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({ preferences })
+      });
+    } catch (e) {
+      console.warn('[api-client] saveSettings failed:', e.message);
+      return { success: false, error: e.message };
+    }
+  }
+
   // ── Collaboration API ──
 
   async function getFolderCollaborators(folderId) {
@@ -438,6 +461,91 @@
 
   async function searchUsers(query) {
     return apiJSON(`/api/folders/users/search?q=${encodeURIComponent(query)}`);
+  }
+
+  // ── Network API ──
+
+  async function getMyBusinessProfile() {
+    try { return await apiJSON('/api/network/profile'); }
+    catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function getBusinessProfile(userId) {
+    try { return await apiJSON(`/api/network/profile/${userId}`); }
+    catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function saveBusinessProfile(profile) {
+    try {
+      return await apiJSON('/api/network/profile', {
+        method: 'POST', body: JSON.stringify(profile)
+      });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function searchDirectory(params) {
+    try {
+      const qs = new URLSearchParams();
+      if (params.keyword) qs.set('keyword', params.keyword);
+      if (params.industry) qs.set('industry', params.industry);
+      if (params.business_type) qs.set('business_type', params.business_type);
+      if (params.location) qs.set('location', params.location);
+      return await apiJSON(`/api/network/directory?${qs.toString()}`);
+    } catch (e) { return { success: false, profiles: [] }; }
+  }
+
+  async function sendConnectionRequest(userId) {
+    try {
+      return await apiJSON(`/api/network/connect/${userId}`, { method: 'POST' });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function respondToConnection(connectionId, action) {
+    try {
+      return await apiJSON(`/api/network/connections/${connectionId}/respond`, {
+        method: 'POST', body: JSON.stringify({ action })
+      });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function removeConnection(connectionId) {
+    try {
+      return await apiJSON(`/api/network/connections/${connectionId}`, { method: 'DELETE' });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function blockUser(userId) {
+    try {
+      return await apiJSON(`/api/network/block/${userId}`, { method: 'POST' });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function getConnections() {
+    try { return await apiJSON('/api/network/connections'); }
+    catch (e) { return { success: false, connections: [] }; }
+  }
+
+  async function getPendingRequests() {
+    try { return await apiJSON('/api/network/requests'); }
+    catch (e) { return { success: false, requests: [] }; }
+  }
+
+  async function sendNetworkMessage(userId, body) {
+    try {
+      return await apiJSON(`/api/network/messages/${userId}`, {
+        method: 'POST', body: JSON.stringify({ body })
+      });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function getConversation(userId) {
+    try { return await apiJSON(`/api/network/messages/${userId}`); }
+    catch (e) { return { success: false, messages: [] }; }
+  }
+
+  async function getUnreadCount() {
+    try { return await apiJSON('/api/network/unread'); }
+    catch (e) { return { success: true, count: 0 }; }
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -502,6 +610,10 @@
     getSharedFolders,
     searchUsers,
 
+    // ── Settings sync ──
+    loadSettings,
+    saveSettings: saveSettingsToServer,
+
     // ── Auth ──
     authRegister,
     authLogin,
@@ -510,7 +622,22 @@
     authChangePassword,
     authLogout,
     authStatus,
-    isLoggedIn: () => !!_getToken()
+    isLoggedIn: () => !!_getToken(),
+
+    // ── Network ──
+    getMyBusinessProfile,
+    getBusinessProfile,
+    saveBusinessProfile,
+    searchDirectory,
+    sendConnectionRequest,
+    respondToConnection,
+    removeConnection,
+    blockUser,
+    getConnections,
+    getPendingRequests,
+    sendNetworkMessage,
+    getConversation,
+    getUnreadCount
   };
 
   console.log('[api-client] window.dashboardAPI ready (server-backed)');

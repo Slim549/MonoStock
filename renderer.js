@@ -34,6 +34,102 @@ let costVsSellSortDir = "asc";
 let customerProfitSortCol = null;
 let customerProfitSortDir = "asc";
 
+// ── Select Mode state (orders / customers / inventory) ──
+let selectModeState = { orders: false, inventory: false, customers: false };
+let selectedItems   = { orders: new Set(), inventory: new Set(), customers: new Set() };
+
+function resetSelectMode(table) {
+  if (table) {
+    selectModeState[table] = false;
+    selectedItems[table].clear();
+  } else {
+    selectModeState = { orders: false, inventory: false, customers: false };
+    selectedItems   = { orders: new Set(), inventory: new Set(), customers: new Set() };
+  }
+}
+
+function toggleSelectMode(table) {
+  selectModeState[table] = !selectModeState[table];
+  selectedItems[table].clear();
+
+  const tableIds = { orders: 'ordersTable', customers: 'customersTable', inventory: 'inventory-table' };
+  const tableEl = document.getElementById(tableIds[table]);
+  if (tableEl) tableEl.classList.toggle('select-active', selectModeState[table]);
+
+  if (table === 'orders')    renderOrderRows(currentFilteredOrders || []);
+  else if (table === 'customers') renderCustomerRows(currentFilteredCustomers || dashboardData.customers);
+  else if (table === 'inventory') renderInventoryRows();
+
+  _updateSelectModeBtn(table);
+  _updateBulkBar(table);
+}
+
+function _updateSelectModeBtn(table) {
+  const btn = document.getElementById(`select-mode-btn-${table}`);
+  if (!btn) return;
+  if (selectModeState[table]) {
+    btn.classList.add('active');
+    btn.textContent = 'Exit Select';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = 'Select';
+  }
+}
+
+function _updateBulkBar(table) {
+  const bar = document.getElementById(`bulk-bar-${table}`);
+  if (!bar) return;
+  bar.style.display = selectModeState[table] ? 'flex' : 'none';
+  const count = selectedItems[table].size;
+  const countEl = bar.querySelector('.bulk-count');
+  if (countEl) countEl.textContent = count > 0 ? `${count} selected` : 'None selected';
+  bar.querySelectorAll('.bulk-action-btn').forEach(b => { b.disabled = count === 0; });
+}
+
+function toggleSelectItem(table, id) {
+  if (selectedItems[table].has(id)) {
+    selectedItems[table].delete(id);
+  } else {
+    selectedItems[table].add(id);
+  }
+  _syncSelectAllCheckbox(table);
+  _updateBulkBar(table);
+}
+
+function _getVisibleRowIds(table) {
+  const tbodyId = table === 'orders' ? 'ordersTableBody' : table === 'customers' ? 'customersTableBody' : 'inv-tbody';
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return [];
+  return Array.from(tbody.querySelectorAll('tr[data-row-id]')).map(tr => tr.dataset.rowId);
+}
+
+function _syncSelectAllCheckbox(table) {
+  const allCb = document.getElementById(`select-all-${table}`);
+  if (!allCb) return;
+  const ids = _getVisibleRowIds(table);
+  const selectedCount = ids.filter(id => selectedItems[table].has(id)).length;
+  allCb.checked = ids.length > 0 && selectedCount === ids.length;
+  allCb.indeterminate = selectedCount > 0 && selectedCount < ids.length;
+}
+
+function toggleSelectAll(table) {
+  const allCb = document.getElementById(`select-all-${table}`);
+  const ids = _getVisibleRowIds(table);
+  if (allCb && allCb.checked) {
+    ids.forEach(id => selectedItems[table].add(id));
+  } else {
+    ids.forEach(id => selectedItems[table].delete(id));
+  }
+  const tbodyId = table === 'orders' ? 'ordersTableBody' : table === 'customers' ? 'customersTableBody' : 'inv-tbody';
+  const tbody = document.getElementById(tbodyId);
+  if (tbody) {
+    tbody.querySelectorAll('.row-check').forEach(cb => {
+      cb.checked = selectedItems[table].has(cb.dataset.rowId);
+    });
+  }
+  _updateBulkBar(table);
+}
+
 if (!appDiv) {
   console.error("appDiv not found! Make sure <div id='app'> exists in index.html");
 }
@@ -75,10 +171,33 @@ setTimeout(async () => {
     } catch {
       currentUser = null;
     }
+
+    // Load server-side preferences so settings sync across devices
+    if (currentUser && window.dashboardAPI.loadSettings) {
+      try {
+        const serverPrefs = await window.dashboardAPI.loadSettings();
+        if (serverPrefs?.success && serverPrefs.preferences && Object.keys(serverPrefs.preferences).length > 0) {
+          localStorage.setItem("appSettings", JSON.stringify(serverPrefs.preferences));
+          applySettings();
+        }
+      } catch (e) {
+        console.warn('[settings] failed to load from server, using localStorage:', e);
+      }
+    }
   }
 
   if (hasUsers && !currentUser) {
-    renderLoginPage();
+    const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/signin") {
+      renderLoginPage();
+      return;
+    }
+    if (path === "/signup") {
+      renderSignupPage();
+      return;
+    }
+    // Root or any other path: show landing page first
+    renderLandingPage();
     return;
   }
 
@@ -402,6 +521,12 @@ function getSettings() {
 
 function saveSettings(settings) {
   localStorage.setItem("appSettings", JSON.stringify(settings));
+  // Sync to server (fire-and-forget) so preferences persist across devices
+  if (window.dashboardAPI?.saveSettings && currentUser) {
+    window.dashboardAPI.saveSettings(settings).catch(e =>
+      console.warn('[settings] server sync failed:', e)
+    );
+  }
 }
 
 function getInvoiceTemplate() {
@@ -1496,6 +1621,11 @@ function renderLandingPage() {
         <img src="assets/cube-logo.png" alt="MonoStock">
         <span class="landing-brand-name">MonoStock</span>
       </a>
+      <nav class="landing-nav">
+        <a href="#features" class="landing-nav-link">Features</a>
+        <a href="#demo" class="landing-nav-link">Demo</a>
+        <a href="#how-it-works" class="landing-nav-link">How It Works</a>
+      </nav>
       <div class="landing-header-cta">
         <a href="/signup" class="btn-primary" id="landing-get-started">Get Started</a>
         <a href="/signin" class="btn-secondary" id="landing-sign-in">Sign In</a>
@@ -1506,33 +1636,67 @@ function renderLandingPage() {
       <div class="landing-hero">
         <h1>Know Your Numbers. Instantly.</h1>
         <p class="subheadline">Track orders, manage inventory, and monitor profit margins—simple and clear. No spreadsheets.</p>
+        <p class="hero-detail">Monostock gives small businesses and sellers a single dashboard to manage products, track every order from start to finish, and see exactly how much profit each sale generates. Stop juggling spreadsheets and start making smarter decisions.</p>
         <div class="landing-cta-row">
-          <a href="/signup" class="landing-hero-cta-primary" id="landing-hero-get-started">Get Started</a>
+          <a href="/signup" class="landing-hero-cta-primary" id="landing-hero-get-started">Start Free — No Credit Card</a>
           <a href="/signin" class="landing-hero-cta-secondary" id="landing-hero-sign-in">Sign In</a>
         </div>
       </div>
     </div>
 
-    <section class="landing-section">
-      <h2 class="landing-section-title scroll-animate">Everything you need</h2>
+    <section class="landing-section" id="features">
+      <h2 class="landing-section-title scroll-animate">Inventory &amp; Order Management Features</h2>
       <div class="landing-features">
         <div class="card landing-feature-card scroll-animate scroll-animate-delay-1">
+          <div class="feature-icon">&#128230;</div>
           <h3>Track Orders</h3>
-          <p>Log and organize every order with status, customer details, and budgets in one place.</p>
+          <p>Log every order with customer details, quantities, status, and budget breakdowns. Organize orders into folders, filter by status or date, and never lose track of a sale again.</p>
         </div>
         <div class="card landing-feature-card scroll-animate scroll-animate-delay-2">
+          <div class="feature-icon">&#128202;</div>
           <h3>Manage Inventory</h3>
-          <p>See what's in stock, what's required, and what you need to reorder—at a glance.</p>
+          <p>Keep a live count of every product and material you stock. See what's available, what's running low, and what needs reordering—so you can fulfill orders without delays.</p>
         </div>
         <div class="card landing-feature-card scroll-animate scroll-animate-delay-3">
+          <div class="feature-icon">&#128176;</div>
           <h3>Monitor Profit Margins</h3>
-          <p>Real margins per order and per customer. Stop guessing—know exactly where you stand.</p>
+          <p>See real profit margins per order and per customer, calculated automatically from your costs and selling prices. Know which products and clients are most profitable at a glance.</p>
         </div>
       </div>
     </section>
 
-    <section class="landing-section landing-demo-section">
-      <h2 class="landing-demo-headline scroll-animate">Try it yourself — create orders below</h2>
+    <section class="landing-section landing-benefits-section" id="benefits">
+      <h2 class="landing-section-title scroll-animate">Why Businesses Choose Monostock</h2>
+      <div class="landing-benefits scroll-animate scroll-animate-delay-1">
+        <div class="landing-benefit">
+          <strong>Replace spreadsheets overnight</strong>
+          <span>Import your data or start fresh—Monostock is simpler than any spreadsheet and far more powerful.</span>
+        </div>
+        <div class="landing-benefit">
+          <strong>Real-time stock visibility</strong>
+          <span>Inventory updates automatically as you log orders, so you always know exactly what you have on hand.</span>
+        </div>
+        <div class="landing-benefit">
+          <strong>Profit clarity, not guesswork</strong>
+          <span>Costs, selling prices, and margins are calculated for you—per order, per product, and per customer.</span>
+        </div>
+        <div class="landing-benefit">
+          <strong>Built for small teams</strong>
+          <span>No complex setup or training. If you can use a spreadsheet, you can use Monostock—only faster.</span>
+        </div>
+        <div class="landing-benefit">
+          <strong>Collaborate with your team</strong>
+          <span>Share order folders with teammates so everyone stays on the same page without version conflicts.</span>
+        </div>
+        <div class="landing-benefit">
+          <strong>Export anything, anytime</strong>
+          <span>Download orders, customers, or inventory as Excel files with one click for reporting or accounting.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section landing-demo-section" id="demo">
+      <h2 class="landing-demo-headline scroll-animate">Try Our Order Tracking Demo</h2>
       <p class="landing-demo-sub scroll-animate scroll-animate-delay-1">No account needed. Nothing is saved. Just see how easy it is.</p>
       <div class="landing-demo scroll-animate scroll-animate-delay-2">
         <div class="landing-orders-demo" id="landing-orders-demo">
@@ -1565,44 +1729,79 @@ function renderLandingPage() {
       </div>
     </section>
 
-    <section class="landing-section landing-how-section">
-      <h2 class="landing-how-title scroll-animate">How it works</h2>
+    <section class="landing-section landing-how-section" id="how-it-works">
+      <h2 class="landing-how-title scroll-animate">How Monostock Simplifies Inventory Tracking</h2>
       <div class="landing-how-it-works-wrap">
       <div class="landing-how-it-works">
         <div class="landing-step scroll-animate scroll-animate-delay-1">
           <div class="landing-step-num">1</div>
-          <h3>Add products</h3>
-          <p>Define your products and materials.</p>
+          <h3>Add your products</h3>
+          <p>Create your product catalog with costs, selling prices, and inventory quantities. Import from a spreadsheet or add them manually—it only takes a few minutes.</p>
         </div>
         <div class="landing-step scroll-animate scroll-animate-delay-2">
           <div class="landing-step-num">2</div>
-          <h3>Log orders</h3>
-          <p>Enter customer orders and build budgets.</p>
+          <h3>Log customer orders</h3>
+          <p>Record each order with the customer, items, quantities, and budget. Organize everything into folders and track status from pending to complete.</p>
         </div>
         <div class="landing-step scroll-animate scroll-animate-delay-3">
           <div class="landing-step-num">3</div>
-          <h3>See real margins</h3>
-          <p>Track profit and margins instantly.</p>
+          <h3>See your real margins</h3>
+          <p>Monostock automatically calculates profit margins across orders, products, and customers. Open your dashboard and know exactly where your business stands.</p>
         </div>
       </div>
       </div>
     </section>
 
+    <section class="landing-cta-banner scroll-animate">
+      <h2>Ready to take control of your inventory?</h2>
+      <p>Join businesses already using Monostock to track orders, manage stock, and grow their margins.</p>
+      <div class="landing-cta-row">
+        <a href="/signup" class="landing-hero-cta-primary" id="landing-bottom-get-started">Get Started Free</a>
+        <a href="#demo" class="landing-hero-cta-secondary landing-cta-demo-link">Try the Demo First</a>
+      </div>
+    </section>
+
     <footer class="landing-footer scroll-animate">
-      MonoStock — Inventory, orders, and margins simplified.
+      <div class="landing-footer-grid">
+        <div class="landing-footer-col">
+          <span class="landing-footer-brand">MonoStock</span>
+          <p>Inventory, orders, and margins simplified.</p>
+        </div>
+        <div class="landing-footer-col">
+          <h4>Explore</h4>
+          <a href="#features">Features</a>
+          <a href="#demo">Demo</a>
+          <a href="#how-it-works">How It Works</a>
+        </div>
+        <div class="landing-footer-col">
+          <h4>Get Started</h4>
+          <a href="/signup" id="footer-signup">Create Account</a>
+          <a href="/signin" id="footer-signin">Sign In</a>
+        </div>
+      </div>
+      <div class="landing-footer-bottom">
+        &copy; ${new Date().getFullYear()} MonoStock. All rights reserved.
+      </div>
     </footer>
   `;
 
-  ["landing-get-started", "landing-hero-get-started"].forEach(id => {
+  ["landing-get-started", "landing-hero-get-started", "landing-bottom-get-started", "footer-signup"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("click", (e) => { e.preventDefault(); navigateTo("/signup"); });
   });
-  ["landing-sign-in", "landing-hero-sign-in"].forEach(id => {
+  ["landing-sign-in", "landing-hero-sign-in", "footer-signin"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("click", (e) => { e.preventDefault(); navigateTo("/signin"); });
   });
   const brand = document.getElementById("landing-brand");
   if (brand) brand.addEventListener("click", (e) => { e.preventDefault(); window.scrollTo(0, 0); });
+
+  appDiv.querySelectorAll('a[href^="#"]').forEach(link => {
+    link.addEventListener("click", (e) => {
+      const target = document.querySelector(link.getAttribute("href"));
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: "smooth" }); }
+    });
+  });
 
   // Scroll-triggered animations
   const scrollAnimated = appDiv.querySelectorAll(".scroll-animate");
@@ -2106,7 +2305,8 @@ function renderNav(currentPage) {
     { id: "orders", name: t.orders, fn: renderOrdersPage },
     { id: "customers", name: t.customers, fn: renderCustomersPage },
     { id: "inventory", name: t.inventory, fn: renderInventoryPage },
-    { id: "invoices", name: t.invoices, fn: renderInvoicesPage }
+    { id: "invoices", name: t.invoices, fn: renderInvoicesPage },
+    { id: "network", name: "Network", fn: () => renderNetworkPage() }
   ];
 
   // If nav exists, check if it needs updating (language change) or just active button change
@@ -3794,6 +3994,7 @@ function renderFolderContents(folderId) {
 
   window.currentPage = "orders";
   currentOpenFolderId = folderId;
+  resetSelectMode('orders');
 
   const isShared = isFolderSharedWithMe(folderId);
   const sharedRole = isShared ? getSharedFolderRole(folderId) : null;
@@ -3827,6 +4028,7 @@ function renderFolderContents(folderId) {
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
       ${canEdit ? `<button id="add">${t("btnAddOrder")}</button>` : ''}
+      <button id="select-mode-btn-orders" class="select-mode-btn" onclick="toggleSelectMode('orders')">Select</button>
       <div class="search-wrapper" id="searchContainer">
         <input
           id="orderSearch"
@@ -3862,10 +4064,18 @@ function renderFolderContents(folderId) {
       <span class="search-count" id="searchCount"></span>
     </div>
 
+    <div id="bulk-bar-orders" class="bulk-action-bar" style="display:none;">
+      <span class="bulk-count">None selected</span>
+      <button class="bulk-action-btn" disabled onclick="bulkDelete('orders')">🗑️ Delete Selected</button>
+      <button class="bulk-action-btn" disabled onclick="bulkChangeStatus()">✏️ Change Status</button>
+      <button class="bulk-action-btn" disabled onclick="bulkExport('orders')">⬇️ Export Selected</button>
+    </div>
+
     <div class="table-container">
       <table id="ordersTable">
         <thead>
           <tr>
+            <th class="th-select"><input type="checkbox" id="select-all-orders" onchange="toggleSelectAll('orders')"></th>
             <th class="sortable" data-col="orderNumber">#</th>
             <th class="sortable" data-col="dateTime">${t("thDate")}</th>
             <th class="sortable" data-col="AccountingNameAccountingNum">${t("thAccounting")}</th>
@@ -4198,7 +4408,7 @@ function renderOrderRows(orderList) {
   }
 
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; padding:40px; opacity:0.5;">${t("noOrdersFound")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="17" style="text-align:center; padding:40px; opacity:0.5;">${t("noOrdersFound")}</td></tr>`;
     return;
   }
 
@@ -4218,10 +4428,12 @@ function renderOrderRows(orderList) {
     const statusBg = statusColors[(o.status || "").trim()] || "var(--border-color)";
 
     const tr = document.createElement("tr");
+    tr.dataset.rowId = o.id;
     if (isActive) {
       tr.style.borderLeft = "4px solid var(--danger-color)";
     }
     tr.innerHTML = `
+      <td class="td-select"><input type="checkbox" class="row-check" data-row-id="${o.id}" ${selectedItems.orders.has(o.id) ? 'checked' : ''}></td>
       <td style="color:${isActive ? "var(--danger-color)" : "var(--info-color)"}; font-weight:${isActive ? "700" : "600"}; cursor:pointer;"
           onclick="openBudgetById('${o.id}')">
         ${o.orderNumber || ""}
@@ -4253,6 +4465,16 @@ function renderOrderRows(orderList) {
     `;
     tbody.appendChild(tr);
   });
+
+  // Wire up checkbox events
+  tbody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', () => toggleSelectItem('orders', cb.dataset.rowId));
+  });
+
+  // Restore table select-active class if mode is on
+  const tableEl = document.getElementById('ordersTable');
+  if (tableEl) tableEl.classList.toggle('select-active', selectModeState.orders);
+  _syncSelectAllCheckbox('orders');
 }
 
 
@@ -5519,6 +5741,7 @@ function renderCustomersPage() {
   }
   
   window.currentPage = "customers";
+  resetSelectMode('customers');
 
   const totalCustomers = dashboardData.customers.length;
 
@@ -5532,6 +5755,7 @@ function renderCustomersPage() {
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
       <button id="addCust">${t("btnAddCustomer")}</button>
+      <button id="select-mode-btn-customers" class="select-mode-btn" onclick="toggleSelectMode('customers')">Select</button>
       <div class="search-wrapper">
         <input
           id="customerSearch"
@@ -5544,10 +5768,17 @@ function renderCustomersPage() {
       <span class="search-count" id="custSearchCount"></span>
     </div>
 
+    <div id="bulk-bar-customers" class="bulk-action-bar" style="display:none;">
+      <span class="bulk-count">None selected</span>
+      <button class="bulk-action-btn" disabled onclick="bulkDelete('customers')">🗑️ Delete Selected</button>
+      <button class="bulk-action-btn" disabled onclick="bulkExport('customers')">⬇️ Export Selected</button>
+    </div>
+
     <div class="table-container">
       <table id="customersTable">
         <thead>
           <tr>
+            <th class="th-select"><input type="checkbox" id="select-all-customers" onchange="toggleSelectAll('customers')"></th>
             <th class="sortable" data-col="id" style="width:60px;">ID</th>
             <th class="sortable" data-col="name">${t("thName")}</th>
             <th class="sortable" data-col="company">${t("thCompany")}</th>
@@ -5662,16 +5893,19 @@ function renderCustomerRows(customerList) {
   }
 
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:40px; opacity:0.5;">No customers found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:40px; opacity:0.5;">No customers found</td></tr>`;
     return;
   }
 
   sorted.forEach(c => {
     const realIndex = dashboardData.customers.indexOf(c);
     const orderCount = getCustomerOrderCount(c.name);
+    const rowId = c.id || String(realIndex);
 
     const tr = document.createElement("tr");
+    tr.dataset.rowId = rowId;
     tr.innerHTML = `
+      <td class="td-select"><input type="checkbox" class="row-check" data-row-id="${rowId}" ${selectedItems.customers.has(rowId) ? 'checked' : ''}></td>
       <td style="font-weight:600; opacity:0.6;">${c.id || realIndex + 1}</td>
       <td style="font-weight:600;">${c.name || ""}</td>
       <td>${c.company || ""}</td>
@@ -5689,6 +5923,15 @@ function renderCustomerRows(customerList) {
     `;
     tbody.appendChild(tr);
   });
+
+  // Wire up checkbox events
+  tbody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', () => toggleSelectItem('customers', cb.dataset.rowId));
+  });
+
+  const tableEl = document.getElementById('customersTable');
+  if (tableEl) tableEl.classList.toggle('select-active', selectModeState.customers);
+  _syncSelectAllCheckbox('customers');
 }
 
 // ---------------- CUSTOMER FORM ----------------
@@ -5811,6 +6054,7 @@ function renderInventoryPage() {
   }
 
   window.currentPage = "inventory";
+  resetSelectMode('inventory');
 
   if (!Array.isArray(dashboardData.inventory)) dashboardData.inventory = [];
 
@@ -5849,6 +6093,7 @@ function renderInventoryPage() {
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
       <button id="inv-add">${t("btnAddItem")}</button>
+      <button id="select-mode-btn-inventory" class="select-mode-btn" onclick="toggleSelectMode('inventory')">Select</button>
       <div class="search-wrapper">
         <input
           id="inventorySearch"
@@ -5867,10 +6112,17 @@ function renderInventoryPage() {
       </div>
     </div>
 
+    <div id="bulk-bar-inventory" class="bulk-action-bar" style="display:none;">
+      <span class="bulk-count">None selected</span>
+      <button class="bulk-action-btn" disabled onclick="bulkDelete('inventory')">🗑️ Delete Selected</button>
+      <button class="bulk-action-btn" disabled onclick="bulkExport('inventory')">⬇️ Export Selected</button>
+    </div>
+
     <div class="table-container">
       <table id="inventory-table">
         <thead>
           <tr>
+            <th class="th-select"><input type="checkbox" id="select-all-inventory" onchange="toggleSelectAll('inventory')"></th>
             <th class="sortable" data-col="material">${t("thMaterial")}</th>
             <th class="sortable" data-col="inStock" style="text-align:right;">${t("thInStock")}</th>
             <th class="sortable" data-col="required" style="text-align:right;">${t("thRequired")}</th>
@@ -6032,12 +6284,13 @@ function renderInventoryRows() {
   }
 
   if (!filteredInventory.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; opacity:0.5;">No inventory items found</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:40px; opacity:0.5;">No inventory items found</td></tr>`;
     return;
   }
 
   filteredInventory.forEach(item => {
     const i = item._origIdx;
+    const rowId = item.id || String(i);
     const delta = (item.required || 0) - (item.inStock || 0);
     const isSurplus = delta < 0;
     const isLow = delta > 0;
@@ -6054,8 +6307,10 @@ function renderInventoryRows() {
     }
 
     const tr = document.createElement("tr");
+    tr.dataset.rowId = rowId;
     if (isLow) tr.className = "low-stock";
     tr.innerHTML = `
+      <td class="td-select"><input type="checkbox" class="row-check" data-row-id="${rowId}" ${selectedItems.inventory.has(rowId) ? 'checked' : ''}></td>
       <td>
         <input type="text" class="inv-material" data-idx="${i}"
                value="${item.material || ""}"
@@ -6072,10 +6327,10 @@ function renderInventoryRows() {
                value="${item.required || 0}" min="0"
                style="width: 100px; padding: 8px 12px; border: 2px solid var(--input-border); border-radius: 8px; background: var(--input-bg); color: var(--input-text); text-align: right;">
       </td>
-      <td style="text-align: right; font-weight: bold; color: ${deltaColor}; padding: 8px 16px; font-size: 1.1em; font-family: 'Monaco', 'Courier New', monospace;">
+      <td class="inv-delta-cell" style="text-align: right; font-weight: bold; color: ${deltaColor}; padding: 8px 16px; font-size: 1.1em; font-family: 'Monaco', 'Courier New', monospace;">
         ${deltaDisplay}
       </td>
-      <td style="text-align: center;">
+      <td class="inv-status-cell" style="text-align: center;">
         ${statusBadge}
       </td>
       <td style="text-align: center;">
@@ -6131,6 +6386,153 @@ function renderInventoryRows() {
       }
     });
   });
+
+  // Wire up checkbox events
+  tbody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', () => toggleSelectItem('inventory', cb.dataset.rowId));
+  });
+
+  const tableEl = document.getElementById('inventory-table');
+  if (tableEl) tableEl.classList.toggle('select-active', selectModeState.inventory);
+  _syncSelectAllCheckbox('inventory');
+}
+
+// ════════════════════════════════════════════════════════════
+// BULK ACTIONS (Select Mode)
+// ════════════════════════════════════════════════════════════
+
+async function bulkDelete(table) {
+  const ids = [...selectedItems[table]];
+  if (!ids.length) return;
+
+  const confirmed = await showConfirm(
+    `Move ${ids.length} item${ids.length !== 1 ? 's' : ''} to Trash?`,
+    'Move to Trash'
+  );
+  if (!confirmed) return;
+
+  if (table === 'orders') {
+    for (const id of ids) {
+      if (window.dashboardAPI.deleteOrder) {
+        try {
+          await window.dashboardAPI.deleteOrder(id);
+        } catch (e) {
+          const idx = findOrderIndexById(id);
+          if (idx !== -1) {
+            moveToTrash('order', dashboardData.orders[idx], {});
+            dashboardData.orders.splice(idx, 1);
+          }
+        }
+      } else {
+        const idx = findOrderIndexById(id);
+        if (idx !== -1) {
+          moveToTrash('order', dashboardData.orders[idx], {});
+          dashboardData.orders.splice(idx, 1);
+        }
+      }
+    }
+    dashboardData = await window.dashboardAPI.load() || dashboardData;
+    showToast(`${ids.length} order${ids.length !== 1 ? 's' : ''} moved to Trash`, 'warning');
+    resetSelectMode('orders');
+    if (currentOpenFolderId) renderFolderContents(currentOpenFolderId);
+    else renderOrdersPage();
+
+  } else if (table === 'customers') {
+    const indices = ids
+      .map(id => dashboardData.customers.findIndex(c => (c.id || '') === id))
+      .filter(i => i !== -1);
+    indices.sort((a, b) => b - a);
+    for (const idx of indices) {
+      moveToTrash('customer', dashboardData.customers[idx]);
+      dashboardData.customers.splice(idx, 1);
+    }
+    saveDashboard();
+    showToast(`${ids.length} customer${ids.length !== 1 ? 's' : ''} moved to Trash`, 'warning');
+    resetSelectMode('customers');
+    renderCustomersPage();
+
+  } else if (table === 'inventory') {
+    const indices = ids
+      .map(id => dashboardData.inventory.findIndex(item => (item.id || '') === id))
+      .filter(i => i !== -1);
+    indices.sort((a, b) => b - a);
+    for (const idx of indices) {
+      moveToTrash('inventory', dashboardData.inventory[idx]);
+      dashboardData.inventory.splice(idx, 1);
+    }
+    saveDashboard();
+    showToast(`${ids.length} item${ids.length !== 1 ? 's' : ''} moved to Trash`, 'warning');
+    resetSelectMode('inventory');
+    renderInventoryPage();
+  }
+}
+
+async function bulkChangeStatus() {
+  const ids = [...selectedItems.orders];
+  if (!ids.length) return;
+
+  const statuses = ['Pending', 'In production', 'Shipped', 'Sold', 'Paid in Full'];
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:380px;">
+      <h3 style="margin-top:0; margin-bottom:8px;">Change Status</h3>
+      <p style="opacity:0.65; font-size:0.9em; margin:0 0 20px;">Apply to <strong>${ids.length}</strong> selected order${ids.length !== 1 ? 's' : ''}:</p>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:24px;">
+        ${statuses.map(s => `<button class="status-pick-btn" data-status="${s}" style="text-align:left; padding:10px 16px; font-weight:600;">${s}</button>`).join('')}
+      </div>
+      <button id="bulk-status-cancel" style="background:var(--border-color); color:var(--text-color);">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#bulk-status-cancel').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  modal.querySelectorAll('.status-pick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newStatus = btn.dataset.status;
+      modal.remove();
+      ids.forEach(id => {
+        const idx = findOrderIndexById(id);
+        if (idx !== -1) dashboardData.orders[idx].status = newStatus;
+      });
+      saveDashboard();
+      showToast(`${ids.length} order${ids.length !== 1 ? 's' : ''} set to "${newStatus}"`, 'success');
+      resetSelectMode('orders');
+      if (currentOpenFolderId) renderFolderContents(currentOpenFolderId);
+      else renderOrdersPage();
+    });
+  });
+}
+
+async function bulkExport(table) {
+  const ids = [...selectedItems[table]];
+  if (!ids.length) return;
+
+  if (table === 'orders') {
+    const selected = dashboardData.orders.filter(o => ids.includes(o.id));
+    if (window.dashboardAPI.exportOrdersExcel) {
+      const result = await window.dashboardAPI.exportOrdersExcel(selected, 'selected');
+      if (result.success) showToast('Export downloaded', 'success');
+      else showToast('Export failed: ' + (result.error || 'unknown error'), 'error');
+    }
+  } else if (table === 'customers') {
+    const selected = dashboardData.customers.filter(c => ids.includes(c.id || ''));
+    if (window.dashboardAPI.exportCustomersExcel) {
+      const result = await window.dashboardAPI.exportCustomersExcel(selected);
+      if (result.success) showToast('Export downloaded', 'success');
+      else showToast('Export failed: ' + (result.error || 'unknown error'), 'error');
+    }
+  } else if (table === 'inventory') {
+    const selected = dashboardData.inventory.filter(item => ids.includes(item.id || ''));
+    if (window.dashboardAPI.exportInventoryExcel) {
+      const result = await window.dashboardAPI.exportInventoryExcel(selected);
+      if (result.success) showToast('Export downloaded', 'success');
+      else showToast('Export failed: ' + (result.error || 'unknown error'), 'error');
+    }
+  }
 }
 
 function updateDeltaCell(input, idx) {
@@ -6142,17 +6544,16 @@ function updateDeltaCell(input, idx) {
   const deltaColor = isSurplus ? "var(--success-color)" : isLow ? "var(--danger-color)" : "inherit";
 
   const row = input.closest("tr");
-  const cells = row.querySelectorAll("td");
 
-  // Update delta cell
-  const deltaCell = cells[3];
+  // Update delta cell (use class to avoid index dependency with checkbox column)
+  const deltaCell = row.querySelector(".inv-delta-cell");
   if (deltaCell) {
     deltaCell.textContent = deltaDisplay;
     deltaCell.style.color = deltaColor;
   }
 
   // Update status badge cell
-  const statusCell = cells[4];
+  const statusCell = row.querySelector(".inv-status-cell");
   if (statusCell) {
     if (isLow) {
       statusCell.innerHTML = `<span class="stock-badge deficit">Low Stock</span>`;
@@ -6305,6 +6706,666 @@ async function deleteOrderById(id) {
     if (currentOpenFolderId) renderFolderContents(currentOpenFolderId);
     else renderOrdersPage();
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ██  NETWORK — B2B Directory, Connections & Messaging
+// ════════════════════════════════════════════════════════════════
+
+const INDUSTRY_OPTIONS = [
+  'Plumbing', 'HVAC', 'Electrical', 'Construction', 'Industrial',
+  'Wholesale', 'Bathroom Fixtures', 'Kitchen & Bath', 'Water Treatment',
+  'Pipe & Fittings', 'Tools & Hardware', 'Safety Equipment',
+  'Janitorial', 'Sanitation', 'Environmental', 'Recycling',
+  'Automation', 'Technology', 'Logistics', 'Other'
+];
+
+const BUSINESS_TYPES = ['Manufacturer', 'Supplier', 'Distributor', 'Retailer', 'Service'];
+
+let networkSubPage = 'directory';
+let networkProfileCache = null;
+let networkPendingCount = 0;
+let networkChatPartner = null;
+
+async function renderNetworkPage(sub) {
+  if (!appDiv) return;
+  if (!currentUser) { renderLoginPage(); return; }
+  window.currentPage = 'network';
+  if (sub) networkSubPage = sub;
+
+  renderNav('network');
+
+  const reqRes = await window.dashboardAPI.getPendingRequests();
+  networkPendingCount = (reqRes.requests || []).length;
+
+  appDiv.innerHTML = `
+    <h1>Network</h1>
+    <div class="network-tabs" id="network-tabs"></div>
+    <div id="network-content"></div>
+  `;
+
+  _renderNetworkTabs();
+
+  switch (networkSubPage) {
+    case 'directory': await _renderDirectory(); break;
+    case 'connections': await _renderConnections(); break;
+    case 'requests': await _renderRequests(); break;
+    case 'messages': await _renderMessages(); break;
+    case 'profile': await _renderMyProfile(); break;
+    default: await _renderDirectory();
+  }
+}
+
+function _renderNetworkTabs() {
+  const tabs = document.getElementById('network-tabs');
+  if (!tabs) return;
+  const items = [
+    { id: 'directory', label: 'Directory' },
+    { id: 'connections', label: 'Connections' },
+    { id: 'requests', label: 'Requests', badge: networkPendingCount },
+    { id: 'messages', label: 'Messages' },
+    { id: 'profile', label: 'My Profile' }
+  ];
+  tabs.innerHTML = items.map(t =>
+    `<button class="network-tab${networkSubPage === t.id ? ' active' : ''}"
+       onclick="renderNetworkPage('${t.id}')">
+      ${t.label}${t.badge ? `<span class="badge">${t.badge}</span>` : ''}
+    </button>`
+  ).join('');
+}
+
+// ── Directory ──
+
+async function _renderDirectory() {
+  const content = document.getElementById('network-content');
+  content.innerHTML = `
+    <div class="card">
+      <h2>Business Directory</h2>
+      <div class="network-search-bar">
+        <div class="search-field">
+          <label>Keyword</label>
+          <input type="text" id="net-search-keyword" placeholder="Company name or keyword…">
+        </div>
+        <div class="search-field">
+          <label>Industry</label>
+          <select id="net-search-industry">
+            <option value="">All Industries</option>
+            ${INDUSTRY_OPTIONS.map(i => `<option value="${i}">${i}</option>`).join('')}
+          </select>
+        </div>
+        <div class="search-field">
+          <label>Type</label>
+          <select id="net-search-type">
+            <option value="">All Types</option>
+            ${BUSINESS_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="search-field">
+          <label>Location</label>
+          <input type="text" id="net-search-location" placeholder="City, state, or country…">
+        </div>
+        <button onclick="_executeDirectorySearch()">Search</button>
+      </div>
+      <div id="directory-results" class="profile-card-grid"></div>
+    </div>
+  `;
+
+  document.getElementById('net-search-keyword')
+    .addEventListener('keydown', e => { if (e.key === 'Enter') _executeDirectorySearch(); });
+  document.getElementById('net-search-location')
+    .addEventListener('keydown', e => { if (e.key === 'Enter') _executeDirectorySearch(); });
+
+  await _executeDirectorySearch();
+}
+
+async function _executeDirectorySearch() {
+  const results = document.getElementById('directory-results');
+  if (!results) return;
+  results.innerHTML = '<div class="empty-state" style="padding:30px;">Searching…</div>';
+
+  const params = {
+    keyword: document.getElementById('net-search-keyword')?.value || '',
+    industry: document.getElementById('net-search-industry')?.value || '',
+    business_type: document.getElementById('net-search-type')?.value || '',
+    location: document.getElementById('net-search-location')?.value || ''
+  };
+
+  const res = await window.dashboardAPI.searchDirectory(params);
+  const profiles = res.profiles || [];
+
+  if (profiles.length === 0) {
+    results.innerHTML = '<div class="empty-state">No businesses found. Try different filters.</div>';
+    return;
+  }
+
+  results.innerHTML = profiles.map(p => _bizCardHTML(p)).join('');
+}
+
+function _bizCardHTML(p, opts = {}) {
+  const logoHTML = p.logo
+    ? `<img src="${p.logo}" alt="${_esc(p.company_name)}">`
+    : (p.company_name || '?').charAt(0).toUpperCase();
+  const locParts = [p.city, p.state, p.country].filter(Boolean);
+  const locationStr = locParts.length > 0 ? locParts.join(', ') : '';
+  const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
+
+  let actionsHTML = '';
+  if (!opts.hideActions) {
+    const uid = p.user_id;
+    actionsHTML = `
+      <div class="biz-card-actions">
+        <button onclick="_connectWith('${uid}')">Connect</button>
+        <button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>
+      </div>`;
+  }
+  if (opts.connected) {
+    const uid = p.user_id;
+    const connId = p.connection_id || '';
+    actionsHTML = `
+      <div class="biz-card-actions">
+        <button onclick="_openChat('${uid}', '${_esc(p.company_name)}')">Message</button>
+        <button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>
+        <button class="btn-outline btn-sm btn-danger" onclick="_disconnectFrom('${connId}')" style="flex:0;">✕</button>
+      </div>`;
+  }
+
+  return `
+    <div class="biz-card">
+      <div class="biz-card-header">
+        <div class="biz-card-logo">${logoHTML}</div>
+        <div>
+          <div class="biz-card-name">${_esc(p.company_name)}</div>
+          <div class="biz-card-type">${_esc(p.business_type || '')}</div>
+        </div>
+      </div>
+      ${p.description ? `<div class="biz-card-desc">${_esc(p.description)}</div>` : ''}
+      ${tags ? `<div class="biz-card-tags">${tags}</div>` : ''}
+      ${locationStr ? `<div class="biz-card-location">📍 ${_esc(locationStr)}</div>` : ''}
+      ${actionsHTML}
+    </div>`;
+}
+
+async function _connectWith(userId) {
+  const res = await window.dashboardAPI.sendConnectionRequest(userId);
+  if (res.success) {
+    showToast('Connection request sent!', 'success');
+  } else {
+    showToast(res.error || 'Could not send request', 'warning');
+  }
+}
+
+async function _disconnectFrom(connectionId) {
+  if (!connectionId) return;
+  const ok = await showConfirm('Remove this connection?', 'Remove');
+  if (!ok) return;
+  const res = await window.dashboardAPI.removeConnection(connectionId);
+  if (res.success) {
+    showToast('Connection removed', 'info');
+    renderNetworkPage('connections');
+  } else {
+    showToast(res.error || 'Failed', 'error');
+  }
+}
+
+// ── View Profile Modal ──
+
+async function _viewProfile(userId) {
+  const res = await window.dashboardAPI.getBusinessProfile(userId);
+  if (!res.success || !res.profile) {
+    showToast('Could not load profile', 'error');
+    return;
+  }
+  const p = res.profile;
+  const conn = res.connection || { status: 'none' };
+
+  const logoHTML = p.logo
+    ? `<img src="${p.logo}" style="width:72px;height:72px;border-radius:16px;object-fit:cover;">`
+    : `<div style="width:72px;height:72px;border-radius:16px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:var(--accent-color);">${(p.company_name || '?').charAt(0).toUpperCase()}</div>`;
+
+  const locParts = [p.city, p.state, p.country].filter(Boolean);
+  const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
+
+  let connectBtn = '';
+  if (conn.status === 'none') {
+    connectBtn = `<button onclick="_connectWith('${userId}');this.closest('.modal').remove();">Send Connection Request</button>`;
+  } else if (conn.status === 'pending') {
+    connectBtn = `<button disabled>Request Pending</button>`;
+  } else if (conn.status === 'connected') {
+    connectBtn = `<button onclick="_openChat('${userId}','${_esc(p.company_name)}');this.closest('.modal').remove();">Message</button>`;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:520px;">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+        ${logoHTML}
+        <div>
+          <h3 style="margin:0;">${_esc(p.company_name)}</h3>
+          <div style="opacity:0.55;font-size:0.9em;margin-top:2px;">${_esc(p.business_type || '')}</div>
+        </div>
+      </div>
+      ${p.description ? `<p style="margin:0 0 14px;opacity:0.75;line-height:1.6;">${_esc(p.description)}</p>` : ''}
+      ${tags ? `<div class="biz-card-tags" style="margin-bottom:14px;">${tags}</div>` : ''}
+      ${locParts.length ? `<p style="margin:0 0 20px;opacity:0.55;font-size:0.9em;">📍 ${_esc(locParts.join(', '))}</p>` : ''}
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        ${connectBtn}
+        <button style="background:var(--border-color);color:var(--text-color);" onclick="this.closest('.modal').remove()">Close</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// ── Connections ──
+
+async function _renderConnections() {
+  const content = document.getElementById('network-content');
+  content.innerHTML = '<div class="card"><h2>Your Connections</h2><div class="empty-state" style="padding:20px;">Loading…</div></div>';
+
+  const res = await window.dashboardAPI.getConnections();
+  const connections = res.connections || [];
+
+  if (connections.length === 0) {
+    content.innerHTML = `
+      <div class="card">
+        <h2>Your Connections</h2>
+        <div class="empty-state">
+          No connections yet. Discover businesses in the <a href="#" onclick="renderNetworkPage('directory');return false;" style="color:var(--accent-color);">Directory</a>.
+        </div>
+      </div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>Your Connections <span style="opacity:0.4;font-weight:400;font-size:0.7em;">${connections.length}</span></h2>
+      <div class="profile-card-grid">
+        ${connections.map(c => _bizCardHTML(c, { connected: true })).join('')}
+      </div>
+    </div>`;
+}
+
+// ── Requests ──
+
+async function _renderRequests() {
+  const content = document.getElementById('network-content');
+  content.innerHTML = '<div class="card"><h2>Pending Requests</h2><div class="empty-state" style="padding:20px;">Loading…</div></div>';
+
+  const res = await window.dashboardAPI.getPendingRequests();
+  const requests = res.requests || [];
+
+  if (requests.length === 0) {
+    content.innerHTML = `
+      <div class="card">
+        <h2>Pending Requests</h2>
+        <div class="empty-state">No pending connection requests.</div>
+      </div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>Pending Requests <span style="opacity:0.4;font-weight:400;font-size:0.7em;">${requests.length}</span></h2>
+      <div id="requests-list">
+        ${requests.map(r => {
+          const p = r.requester_profile || {};
+          const u = r.requester_user || {};
+          const name = p.company_name || u.name || u.email || 'Unknown';
+          const logo = p.logo
+            ? `<img src="${p.logo}" style="width:44px;height:44px;border-radius:12px;object-fit:cover;">`
+            : `<div style="width:44px;height:44px;border-radius:12px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent-color);">${name.charAt(0).toUpperCase()}</div>`;
+          return `
+            <div class="request-card">
+              ${logo}
+              <div style="flex:1;">
+                <div style="font-weight:600;">${_esc(name)}</div>
+                <div style="font-size:0.82em;opacity:0.55;">${_esc(p.business_type || '')}${p.city ? ` · ${_esc(p.city)}` : ''}</div>
+              </div>
+              <button class="btn-sm btn-success" onclick="_respondRequest('${r.id}','accept')">Accept</button>
+              <button class="btn-sm btn-outline" onclick="_respondRequest('${r.id}','decline')">Decline</button>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+async function _respondRequest(connectionId, action) {
+  const res = await window.dashboardAPI.respondToConnection(connectionId, action);
+  if (res.success) {
+    showToast(action === 'accept' ? 'Connection accepted!' : 'Request declined', action === 'accept' ? 'success' : 'info');
+    renderNetworkPage('requests');
+  } else {
+    showToast(res.error || 'Failed', 'error');
+  }
+}
+
+// ── Messages ──
+
+async function _renderMessages() {
+  const content = document.getElementById('network-content');
+
+  if (networkChatPartner) {
+    await _renderChat(networkChatPartner.userId, networkChatPartner.name);
+    return;
+  }
+
+  const res = await window.dashboardAPI.getConnections();
+  const connections = res.connections || [];
+
+  if (connections.length === 0) {
+    content.innerHTML = `
+      <div class="card">
+        <h2>Messages</h2>
+        <div class="empty-state">Connect with businesses first to start messaging.</div>
+      </div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>Messages</h2>
+      <p style="opacity:0.55;margin-bottom:16px;">Select a connection to start a conversation.</p>
+      ${connections.map(c => {
+        const name = c.company_name || 'Unknown';
+        const logo = c.logo
+          ? `<img src="${c.logo}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">`
+          : `<div style="width:40px;height:40px;border-radius:10px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent-color);font-size:0.9em;">${name.charAt(0).toUpperCase()}</div>`;
+        return `
+          <div class="request-card" style="cursor:pointer;" onclick="_openChat('${c.user_id}','${_esc(name)}')">
+            ${logo}
+            <div style="flex:1;">
+              <div style="font-weight:600;">${_esc(name)}</div>
+              <div style="font-size:0.82em;opacity:0.55;">${_esc(c.business_type || '')}</div>
+            </div>
+            <span style="opacity:0.3;font-size:1.2em;">›</span>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function _openChat(userId, name) {
+  networkChatPartner = { userId, name };
+  renderNetworkPage('messages');
+}
+
+async function _renderChat(partnerId, partnerName) {
+  const content = document.getElementById('network-content');
+  content.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="chat-panel">
+        <div class="chat-header">
+          <button class="btn-sm btn-outline" onclick="networkChatPartner=null;renderNetworkPage('messages');" style="flex:0;padding:6px 12px !important;">←</button>
+          <span>${_esc(partnerName)}</span>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-bar">
+          <input type="text" id="chat-input" placeholder="Type a message…">
+          <button onclick="_sendChatMsg('${partnerId}')">Send</button>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('chat-input')
+    .addEventListener('keydown', e => { if (e.key === 'Enter') _sendChatMsg(partnerId); });
+
+  await _loadChatMessages(partnerId);
+}
+
+async function _loadChatMessages(partnerId) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  const res = await window.dashboardAPI.getConversation(partnerId);
+  const msgs = res.messages || [];
+
+  if (msgs.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:40px 20px;">No messages yet. Say hello!</div>';
+    return;
+  }
+
+  container.innerHTML = msgs.map(m => {
+    const isSent = m.sender_id === currentUser.id;
+    const time = new Date(m.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="chat-bubble ${isSent ? 'sent' : 'received'}">
+        ${_esc(m.body)}
+        <span class="chat-time">${time}</span>
+      </div>`;
+  }).join('');
+
+  container.scrollTop = container.scrollHeight;
+}
+
+async function _sendChatMsg(partnerId) {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const body = input.value.trim();
+  if (!body) return;
+
+  input.value = '';
+  const res = await window.dashboardAPI.sendNetworkMessage(partnerId, body);
+  if (res.success) {
+    await _loadChatMessages(partnerId);
+  } else {
+    showToast(res.error || 'Failed to send', 'error');
+  }
+}
+
+// ── My Profile ──
+
+async function _renderMyProfile() {
+  const content = document.getElementById('network-content');
+  content.innerHTML = '<div class="card"><h2>My Business Profile</h2><div class="empty-state" style="padding:20px;">Loading…</div></div>';
+
+  const res = await window.dashboardAPI.getMyBusinessProfile();
+  const p = res.profile || {};
+  networkProfileCache = p;
+
+  const selectedTags = p.industry_tags || [];
+
+  content.innerHTML = `
+    <div class="card">
+      <h2>My Business Profile</h2>
+      <div class="profile-form-grid">
+        <div class="form-group full-width">
+          <label>Company Logo</label>
+          <div class="logo-upload-area">
+            <div class="logo-preview" id="logo-preview" onclick="_pickNetworkLogo()">
+              ${p.logo ? `<img src="${p.logo}">` : '<span style="opacity:0.35;font-size:0.8em;">Upload</span>'}
+            </div>
+            <div style="font-size:0.85em;opacity:0.55;">Click to upload a logo image</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Company Name *</label>
+          <input type="text" id="bp-company" value="${_esc(p.company_name || '')}" placeholder="Your company name" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>Business Type</label>
+          <select id="bp-type">
+            ${BUSINESS_TYPES.map(t => `<option value="${t}"${p.business_type === t ? ' selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group full-width">
+          <label>Description</label>
+          <textarea id="bp-desc" rows="3" placeholder="Brief description of your business…" maxlength="2000">${_esc(p.description || '')}</textarea>
+        </div>
+        <div class="form-group full-width" style="position:relative;">
+          <label>Industry Categories</label>
+          <div class="tag-select-wrap" id="tag-select-wrap">
+            ${selectedTags.map(t => `<span class="tag-chip" data-tag="${_esc(t)}">${_esc(t)} <span class="tag-remove" onclick="_removeTag(this)">×</span></span>`).join('')}
+            <input type="text" id="tag-input" placeholder="${selectedTags.length ? '' : 'Type to add industries…'}" autocomplete="off">
+          </div>
+          <div class="tag-dropdown" id="tag-dropdown" style="display:none;"></div>
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" id="bp-city" value="${_esc(p.city || '')}" placeholder="City" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label>State / Region</label>
+          <input type="text" id="bp-state" value="${_esc(p.state || '')}" placeholder="State" maxlength="100">
+        </div>
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" id="bp-country" value="${_esc(p.country || '')}" placeholder="Country" maxlength="100">
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <div class="toggle-switch" style="padding-bottom:12px;">
+            <input type="checkbox" id="bp-hide-location" ${p.hide_location ? 'checked' : ''}>
+            <span class="toggle-label">Hide location</span>
+          </div>
+        </div>
+        <div class="form-group full-width" style="border-top:1px solid var(--border-color);padding-top:20px;margin-top:4px;">
+          <h3 style="margin:0 0 14px;">Privacy</h3>
+        </div>
+        <div class="form-group">
+          <label>Profile Visibility</label>
+          <select id="bp-visibility">
+            <option value="public"${p.visibility === 'public' || !p.visibility ? ' selected' : ''}>Public</option>
+            <option value="private"${p.visibility === 'private' ? ' selected' : ''}>Private</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Who Can Send Requests</label>
+          <select id="bp-allow-requests">
+            <option value="everyone"${p.allow_requests === 'everyone' || !p.allow_requests ? ' selected' : ''}>Everyone</option>
+            <option value="connected_only"${p.allow_requests === 'connected_only' ? ' selected' : ''}>Connected Only</option>
+            <option value="none"${p.allow_requests === 'none' ? ' selected' : ''}>Nobody</option>
+          </select>
+        </div>
+        <div class="full-width" style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+          <button onclick="_saveBusinessProfile()">Save Profile</button>
+        </div>
+      </div>
+    </div>`;
+
+  _initTagInput();
+}
+
+let _networkLogoData = null;
+
+async function _pickNetworkLogo() {
+  const result = await window.dashboardAPI.pickCompanyLogo();
+  if (result.success && result.path) {
+    _networkLogoData = result.path;
+    const preview = document.getElementById('logo-preview');
+    if (preview) preview.innerHTML = `<img src="${result.path}">`;
+  }
+}
+
+function _initTagInput() {
+  const input = document.getElementById('tag-input');
+  const dropdown = document.getElementById('tag-dropdown');
+  if (!input || !dropdown) return;
+
+  input.addEventListener('input', () => {
+    const val = input.value.toLowerCase().trim();
+    if (!val) { dropdown.style.display = 'none'; return; }
+    const current = _getSelectedTags();
+    const filtered = INDUSTRY_OPTIONS.filter(o =>
+      o.toLowerCase().includes(val) && !current.includes(o)
+    );
+    const exactMatch = INDUSTRY_OPTIONS.some(o => o.toLowerCase() === val);
+    const alreadyAdded = current.some(t => t.toLowerCase() === val);
+    let html = filtered.map(o =>
+      `<div class="tag-dropdown-item" onmousedown="_addTag('${_esc(o)}')">${_esc(o)}</div>`
+    ).join('');
+    if (!exactMatch && !alreadyAdded && val.length > 0) {
+      const custom = input.value.trim();
+      html += `<div class="tag-dropdown-item" style="opacity:0.7;font-style:italic;" onmousedown="_addTag('${_esc(custom)}')">Add "${_esc(custom)}"</div>`;
+    }
+    if (!html) { dropdown.style.display = 'none'; return; }
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => { dropdown.style.display = 'none'; }, 150);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = input.value.trim();
+      if (!val) return;
+      const current = _getSelectedTags();
+      if (current.some(t => t.toLowerCase() === val.toLowerCase())) { input.value = ''; dropdown.style.display = 'none'; return; }
+      const match = INDUSTRY_OPTIONS.find(o => o.toLowerCase() === val.toLowerCase());
+      _addTag(match || val);
+      dropdown.style.display = 'none';
+    }
+    if (e.key === 'Backspace' && !input.value) {
+      const wrap = document.getElementById('tag-select-wrap');
+      const chips = wrap.querySelectorAll('.tag-chip');
+      if (chips.length > 0) chips[chips.length - 1].remove();
+    }
+  });
+}
+
+function _addTag(tag) {
+  const wrap = document.getElementById('tag-select-wrap');
+  const input = document.getElementById('tag-input');
+  const dropdown = document.getElementById('tag-dropdown');
+  if (!wrap || !input) return;
+
+  if (_getSelectedTags().includes(tag)) return;
+
+  const chip = document.createElement('span');
+  chip.className = 'tag-chip';
+  chip.dataset.tag = tag;
+  chip.innerHTML = `${_esc(tag)} <span class="tag-remove" onclick="_removeTag(this)">×</span>`;
+  wrap.insertBefore(chip, input);
+  input.value = '';
+  input.placeholder = '';
+  if (dropdown) dropdown.style.display = 'none';
+}
+
+function _removeTag(el) {
+  el.closest('.tag-chip').remove();
+}
+
+function _getSelectedTags() {
+  const wrap = document.getElementById('tag-select-wrap');
+  if (!wrap) return [];
+  return Array.from(wrap.querySelectorAll('.tag-chip')).map(c => c.dataset.tag);
+}
+
+async function _saveBusinessProfile() {
+  const company = document.getElementById('bp-company')?.value.trim();
+  if (!company) { showToast('Company name is required', 'warning'); return; }
+
+  const profile = {
+    company_name: company,
+    logo: _networkLogoData || networkProfileCache?.logo || null,
+    description: document.getElementById('bp-desc')?.value.trim() || '',
+    industry_tags: _getSelectedTags(),
+    business_type: document.getElementById('bp-type')?.value || 'Service',
+    city: document.getElementById('bp-city')?.value.trim() || '',
+    state: document.getElementById('bp-state')?.value.trim() || '',
+    country: document.getElementById('bp-country')?.value.trim() || '',
+    visibility: document.getElementById('bp-visibility')?.value || 'public',
+    allow_requests: document.getElementById('bp-allow-requests')?.value || 'everyone',
+    hide_location: document.getElementById('bp-hide-location')?.checked || false
+  };
+
+  const res = await window.dashboardAPI.saveBusinessProfile(profile);
+  if (res.success) {
+    _networkLogoData = null;
+    networkProfileCache = res.profile;
+    showToast('Profile saved!', 'success');
+  } else {
+    showToast(res.error || 'Failed to save profile', 'error');
+  }
+}
+
+function _esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 // ---------------- INITIAL LOAD ---------------- 

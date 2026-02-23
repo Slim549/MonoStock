@@ -116,6 +116,28 @@ async function setSetting(key, value) {
   if (error) throw error;
 }
 
+// ── User preferences (per-user settings sync) ──
+
+async function getUserPreferences(userId) {
+  const { data, error } = await supabase
+    .from('user_preferences')
+    .select('preferences')
+    .eq('user_id', userId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data ? data.preferences : {};
+}
+
+async function setUserPreferences(userId, prefs) {
+  const { error } = await supabase
+    .from('user_preferences')
+    .upsert(
+      { user_id: userId, preferences: prefs, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    );
+  if (error) throw error;
+}
+
 // ── Collaboration helpers ──
 
 async function getSharedFolders(userId) {
@@ -332,6 +354,304 @@ async function getBackupData(backupId) {
   return data.data;
 }
 
+// ── Business Profile helpers ──
+
+async function getBusinessProfile(userId) {
+  const { data, error } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
+}
+
+async function upsertBusinessProfile(userId, profile) {
+  let existing = null;
+  try { existing = await getBusinessProfile(userId); } catch (_) { /* table may not exist yet */ }
+
+  const now = new Date().toISOString();
+  const fields = {
+    user_id: userId,
+    company_name: profile.company_name || '',
+    logo: profile.logo || null,
+    description: profile.description || '',
+    industry_tags: profile.industry_tags || [],
+    business_type: profile.business_type || 'Service',
+    city: profile.city || '',
+    state: profile.state || '',
+    country: profile.country || '',
+    visibility: profile.visibility || 'public',
+    allow_requests: profile.allow_requests || 'everyone',
+    hide_location: !!profile.hide_location,
+    updated_at: now
+  };
+
+  if (existing) {
+    const { error } = await supabase
+      .from('business_profiles')
+      .update(fields)
+      .eq('id', existing.id);
+    if (error) throw error;
+    return { id: existing.id, ...fields };
+  } else {
+    const row = { id: uuidv4(), ...fields, created_at: now };
+    const { error } = await supabase
+      .from('business_profiles')
+      .insert(row);
+    if (error) throw error;
+    return row;
+  }
+}
+
+async function searchBusinessProfiles({ keyword, industry, business_type, location, exclude_user_id, limit = 50, offset = 0 }) {
+  let q = supabase
+    .from('business_profiles')
+    .select('*')
+    .eq('visibility', 'public');
+
+  if (exclude_user_id) q = q.neq('user_id', exclude_user_id);
+  if (industry) q = q.contains('industry_tags', [industry]);
+  if (business_type) q = q.eq('business_type', business_type);
+  if (location) {
+    q = q.or(`city.ilike.%${location}%,state.ilike.%${location}%,country.ilike.%${location}%`);
+  }
+  if (keyword) {
+    q = q.or(`company_name.ilike.%${keyword}%,description.ilike.%${keyword}%`);
+  }
+
+  q = q.range(offset, offset + limit - 1).order('company_name');
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data || []).map(p => {
+    if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
+    return p;
+  });
+}
+
+async function getBusinessProfileByUserId(userId) {
+  return getBusinessProfile(userId);
+}
+
+// ── Connection helpers ──
+
+async function sendConnectionRequest(requesterId, receiverId) {
+  const { data: existing } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`and(requester_id.eq.${requesterId},receiver_id.eq.${receiverId}),and(requester_id.eq.${receiverId},receiver_id.eq.${requesterId})`)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    const conn = existing[0];
+    if (conn.status === 'blocked') return { success: false, error: 'Cannot send request' };
+    if (conn.status === 'connected') return { success: false, error: 'Already connected' };
+    if (conn.status === 'pending') return { success: false, error: 'Request already pending' };
+  }
+
+  const receiverProfile = await getBusinessProfile(receiverId);
+  if (receiverProfile && receiverProfile.allow_requests === 'none') {
+    return { success: false, error: 'This user is not accepting connection requests' };
+  }
+  if (receiverProfile && receiverProfile.allow_requests === 'connected_only') {
+    return { success: false, error: 'This user only accepts requests from mutual connections' };
+  }
+
+  const row = {
+    id: uuidv4(),
+    requester_id: requesterId,
+    receiver_id: receiverId,
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('connections').insert(row);
+  if (error) throw error;
+  return { success: true, connection: row };
+}
+
+async function respondToConnection(connectionId, userId, action) {
+  const { data: conn, error: fetchErr } = await supabase
+    .from('connections').select('*').eq('id', connectionId).single();
+  if (fetchErr) throw fetchErr;
+  if (!conn) return { success: false, error: 'Connection not found' };
+  if (conn.receiver_id !== userId) return { success: false, error: 'Not authorized' };
+  if (conn.status !== 'pending') return { success: false, error: 'Request is not pending' };
+
+  const newStatus = action === 'accept' ? 'connected' : 'declined';
+  const { error } = await supabase
+    .from('connections')
+    .update({ status: newStatus, updated_at: new Date().toISOString() })
+    .eq('id', connectionId);
+  if (error) throw error;
+  return { success: true, status: newStatus };
+}
+
+async function removeConnection(connectionId, userId) {
+  const { data: conn } = await supabase
+    .from('connections').select('*').eq('id', connectionId).single();
+  if (!conn) return { success: false, error: 'Not found' };
+  if (conn.requester_id !== userId && conn.receiver_id !== userId) {
+    return { success: false, error: 'Not authorized' };
+  }
+  const { error } = await supabase.from('connections').delete().eq('id', connectionId);
+  if (error) throw error;
+  return { success: true };
+}
+
+async function blockConnection(userId, targetId) {
+  const { data: existing } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`and(requester_id.eq.${userId},receiver_id.eq.${targetId}),and(requester_id.eq.${targetId},receiver_id.eq.${userId})`)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    const { error } = await supabase
+      .from('connections')
+      .update({ status: 'blocked', updated_at: new Date().toISOString() })
+      .eq('id', existing[0].id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('connections').insert({
+      id: uuidv4(), requester_id: userId, receiver_id: targetId,
+      status: 'blocked', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    });
+    if (error) throw error;
+  }
+  return { success: true };
+}
+
+async function getUserConnections(userId) {
+  const { data, error } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`requester_id.eq.${userId},receiver_id.eq.${userId}`)
+    .order('updated_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function getPendingRequests(userId) {
+  const { data, error } = await supabase
+    .from('connections')
+    .select('*')
+    .eq('receiver_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  if (!data || data.length === 0) return [];
+  const requesterIds = data.map(c => c.requester_id);
+  const { data: profiles } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .in('user_id', requesterIds);
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .in('id', requesterIds);
+
+  const profileMap = {};
+  (profiles || []).forEach(p => { profileMap[p.user_id] = p; });
+  const userMap = {};
+  (users || []).forEach(u => { userMap[u.id] = u; });
+
+  return data.map(c => ({
+    ...c,
+    requester_profile: profileMap[c.requester_id] || null,
+    requester_user: userMap[c.requester_id] || null
+  }));
+}
+
+async function getConnectedProfiles(userId) {
+  const { data, error } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`requester_id.eq.${userId},receiver_id.eq.${userId}`)
+    .eq('status', 'connected');
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  const otherIds = data.map(c => c.requester_id === userId ? c.receiver_id : c.requester_id);
+  const { data: profiles } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .in('user_id', otherIds);
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .in('id', otherIds);
+
+  const userMap = {};
+  (users || []).forEach(u => { userMap[u.id] = u; });
+
+  return (profiles || []).map(p => ({
+    ...p,
+    user: userMap[p.user_id] || null,
+    connection_id: data.find(c => c.requester_id === p.user_id || c.receiver_id === p.user_id)?.id
+  }));
+}
+
+async function getConnectionStatus(userId, targetId) {
+  const { data } = await supabase
+    .from('connections')
+    .select('*')
+    .or(`and(requester_id.eq.${userId},receiver_id.eq.${targetId}),and(requester_id.eq.${targetId},receiver_id.eq.${userId})`)
+    .limit(1);
+  if (!data || data.length === 0) return { status: 'none' };
+  return { status: data[0].status, connection_id: data[0].id, direction: data[0].requester_id === userId ? 'sent' : 'received' };
+}
+
+// ── Message helpers ──
+
+async function sendMessage(senderId, receiverId, body) {
+  const connStatus = await getConnectionStatus(senderId, receiverId);
+  if (connStatus.status !== 'connected') {
+    return { success: false, error: 'You must be connected to send messages' };
+  }
+  const row = {
+    id: uuidv4(),
+    sender_id: senderId,
+    receiver_id: receiverId,
+    body: body.trim(),
+    read: false,
+    created_at: new Date().toISOString()
+  };
+  const { error } = await supabase.from('messages').insert(row);
+  if (error) throw error;
+  return { success: true, message: row };
+}
+
+async function getConversation(userId, partnerId, limit = 50) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .or(`and(sender_id.eq.${userId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${userId})`)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+
+  await supabase
+    .from('messages')
+    .update({ read: true })
+    .eq('sender_id', partnerId)
+    .eq('receiver_id', userId)
+    .eq('read', false);
+
+  return data || [];
+}
+
+async function getUnreadMessageCount(userId) {
+  const { count, error } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('receiver_id', userId)
+    .eq('read', false);
+  if (error) return 0;
+  return count || 0;
+}
+
 module.exports = {
   load,
   save,
@@ -345,6 +665,8 @@ module.exports = {
   restoreBackup,
   getBackupData,
   normalize,
+  getUserPreferences,
+  setUserPreferences,
   getSharedFolders,
   getSharedFolderOwnerNames,
   getOrdersByFolderIds,
@@ -353,5 +675,21 @@ module.exports = {
   removeCollaborator,
   updateCollaboratorRole,
   getCollaborators,
-  getFolderRole
+  getFolderRole,
+  // Network
+  getBusinessProfile,
+  upsertBusinessProfile,
+  searchBusinessProfiles,
+  getBusinessProfileByUserId,
+  sendConnectionRequest,
+  respondToConnection,
+  removeConnection,
+  blockConnection,
+  getUserConnections,
+  getPendingRequests,
+  getConnectedProfiles,
+  getConnectionStatus,
+  sendMessage,
+  getConversation,
+  getUnreadMessageCount
 };
