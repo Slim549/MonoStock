@@ -377,6 +377,46 @@
     return apiJSON('/api/auth/status');
   }
 
+  // ── Verification API ──
+
+  async function sendVerificationEmail() {
+    return apiJSON('/api/verification/send-email', { method: 'POST' });
+  }
+
+  async function getVerificationStatus() {
+    try { return await apiJSON('/api/verification/status'); }
+    catch (e) { return { success: false }; }
+  }
+
+  async function startDomainVerification(domain) {
+    return apiJSON('/api/verification/start-domain', {
+      method: 'POST',
+      body: JSON.stringify({ domain })
+    });
+  }
+
+  async function verifyDomain() {
+    return apiJSON('/api/verification/verify-domain', { method: 'POST' });
+  }
+
+  // ── Trust Score API ──
+
+  async function getTrustScore(userId) {
+    try { return await apiJSON(`/api/trust-score/${userId}`); }
+    catch (e) { return { success: false }; }
+  }
+
+  async function recalculateTrustScore(userId) {
+    return apiJSON(`/api/trust-score/${userId}/recalculate`, { method: 'POST' });
+  }
+
+  async function flagUser(userId, reason, severity, type) {
+    return apiJSON(`/api/trust-score/${userId}/flag`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, severity: severity || 'low', type: type || 'flag' })
+    });
+  }
+
   // ── Additional API methods for server-validated operations ──
 
   async function createOrder(orderData) {
@@ -488,6 +528,7 @@
       const qs = new URLSearchParams();
       if (params.keyword) qs.set('keyword', params.keyword);
       if (params.industry) qs.set('industry', params.industry);
+      if (params.industry_custom) qs.set('industry_custom', params.industry_custom);
       if (params.business_type) qs.set('business_type', params.business_type);
       if (params.location) qs.set('location', params.location);
       return await apiJSON(`/api/network/directory?${qs.toString()}`);
@@ -623,6 +664,17 @@
     authLogout,
     authStatus,
     isLoggedIn: () => !!_getToken(),
+
+    // ── Verification ──
+    sendVerificationEmail,
+    getVerificationStatus,
+    startDomainVerification,
+    verifyDomain,
+
+    // ── Trust Score ──
+    getTrustScore,
+    recalculateTrustScore,
+    flagUser,
 
     // ── Network ──
     getMyBusinessProfile,

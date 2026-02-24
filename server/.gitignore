@@ -13,8 +13,3 @@ data/backups/
 *.log
 
 # Temporary files
-$null
-can
-refactor
-structure
-{

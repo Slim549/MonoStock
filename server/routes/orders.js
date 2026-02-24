@@ -5,6 +5,7 @@ const store = require('../data/store');
 const { validateOrder, sanitizeOrder } = require('../services/validation');
 const { calculateBudget } = require('../services/budget');
 const { requireAuth, checkFolderAccess } = require('../middleware/auth');
+const trustScore = require('../services/trustScore');
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -85,6 +86,7 @@ router.post('/', requireAuth, async (req, res) => {
     const folderRow = orderInput.folderId ? await store.getRowById('order_folders', orderInput.folderId) : null;
     const ownerUserId = folderRow ? folderRow.user_id : userId;
     await store.upsertRow('orders', order.id, order, ownerUserId);
+    trustScore.recalculate(userId).catch(() => {});
 
     res.status(201).json({ success: true, order });
   } catch (err) {

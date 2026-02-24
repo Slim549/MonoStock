@@ -124,6 +124,7 @@ async function getUserPreferences(userId) {
     .select('preferences')
     .eq('user_id', userId)
     .single();
+  if (error && error.code === 'PGRST205') return {};
   if (error && error.code !== 'PGRST116') throw error;
   return data ? data.preferences : {};
 }
@@ -135,6 +136,10 @@ async function setUserPreferences(userId, prefs) {
       { user_id: userId, preferences: prefs, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
     );
+  if (error && error.code === 'PGRST205') {
+    console.warn('[store] user_preferences table does not exist — run the migration SQL to create it');
+    return;
+  }
   if (error) throw error;
 }
 
@@ -404,7 +409,7 @@ async function upsertBusinessProfile(userId, profile) {
   }
 }
 
-async function searchBusinessProfiles({ keyword, industry, business_type, location, exclude_user_id, limit = 50, offset = 0 }) {
+async function searchBusinessProfiles({ keyword, industry, industry_custom, business_type, location, exclude_user_id, limit = 50, offset = 0 }) {
   let q = supabase
     .from('business_profiles')
     .select('*')
@@ -412,6 +417,7 @@ async function searchBusinessProfiles({ keyword, industry, business_type, locati
 
   if (exclude_user_id) q = q.neq('user_id', exclude_user_id);
   if (industry) q = q.contains('industry_tags', [industry]);
+  if (industry_custom) q = q.filter('industry_tags::text', 'ilike', `%${industry_custom}%`);
   if (business_type) q = q.eq('business_type', business_type);
   if (location) {
     q = q.or(`city.ilike.%${location}%,state.ilike.%${location}%,country.ilike.%${location}%`);
@@ -423,10 +429,20 @@ async function searchBusinessProfiles({ keyword, industry, business_type, locati
   q = q.range(offset, offset + limit - 1).order('company_name');
   const { data, error } = await q;
   if (error) throw error;
-  return (data || []).map(p => {
+  const profiles = (data || []).map(p => {
     if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
     return p;
   });
+
+  if (profiles.length > 0) {
+    const uids = profiles.map(p => p.user_id);
+    const { data: udata } = await supabase.from('users').select('id, verification_badge').in('id', uids);
+    const badgeMap = {};
+    (udata || []).forEach(u => { badgeMap[u.id] = !!u.verification_badge; });
+    profiles.forEach(p => { p.verification_badge = badgeMap[p.user_id] || false; });
+  }
+
+  return profiles;
 }
 
 async function getBusinessProfileByUserId(userId) {
@@ -553,7 +569,10 @@ async function getPendingRequests(userId) {
     .in('id', requesterIds);
 
   const profileMap = {};
-  (profiles || []).forEach(p => { profileMap[p.user_id] = p; });
+  (profiles || []).forEach(p => {
+    if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
+    profileMap[p.user_id] = p;
+  });
   const userMap = {};
   (users || []).forEach(u => { userMap[u.id] = u; });
 
@@ -580,17 +599,22 @@ async function getConnectedProfiles(userId) {
     .in('user_id', otherIds);
   const { data: users } = await supabase
     .from('users')
-    .select('id, name, email')
+    .select('id, name, email, verification_badge')
     .in('id', otherIds);
 
   const userMap = {};
   (users || []).forEach(u => { userMap[u.id] = u; });
 
-  return (profiles || []).map(p => ({
-    ...p,
-    user: userMap[p.user_id] || null,
-    connection_id: data.find(c => c.requester_id === p.user_id || c.receiver_id === p.user_id)?.id
-  }));
+  return (profiles || []).map(p => {
+    if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
+    const u = userMap[p.user_id] || {};
+    return {
+      ...p,
+      user: u,
+      verification_badge: !!u.verification_badge,
+      connection_id: data.find(c => c.requester_id === p.user_id || c.receiver_id === p.user_id)?.id
+    };
+  });
 }
 
 async function getConnectionStatus(userId, targetId) {

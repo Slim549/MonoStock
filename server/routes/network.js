@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const store = require('../data/store');
 const { requireAuth } = require('../middleware/auth');
+const trustScore = require('../services/trustScore');
 
 const VALID_BUSINESS_TYPES = ['Manufacturer', 'Supplier', 'Distributor', 'Retailer', 'Service'];
 const VALID_VISIBILITIES = ['public', 'private'];
@@ -35,6 +36,11 @@ router.get('/profile/:userId', requireAuth, async (req, res) => {
       profile.country = '';
     }
     const connStatus = await store.getConnectionStatus(req.user.id, req.params.userId);
+    const users = require('../data/users');
+    try {
+      const owner = await users.getRawUser(req.params.userId);
+      if (owner) profile.verification_badge = !!owner.verification_badge;
+    } catch (_) {}
     res.json({ success: true, profile, connection: connStatus });
   } catch (err) {
     console.error('[network] get profile by user error:', err);
@@ -68,6 +74,7 @@ router.post('/profile', requireAuth, async (req, res) => {
     }
 
     const profile = await store.upsertBusinessProfile(req.user.id, p);
+    trustScore.recalculate(req.user.id).catch(() => {});
     res.json({ success: true, profile });
   } catch (err) {
     console.error('[network] save profile error:', err);
@@ -80,14 +87,26 @@ router.post('/profile', requireAuth, async (req, res) => {
 
 router.get('/directory', requireAuth, async (req, res) => {
   try {
-    const { keyword, industry, business_type, location, limit, offset } = req.query;
+    const { keyword, industry, industry_custom, business_type, location, limit, offset } = req.query;
     const profiles = await store.searchBusinessProfiles({
-      keyword, industry, business_type, location,
+      keyword, industry, industry_custom, business_type, location,
       exclude_user_id: req.user.id,
       limit: Math.min(parseInt(limit) || 50, 100),
       offset: parseInt(offset) || 0
     });
-    res.json({ success: true, profiles });
+
+    const userConns = await store.getUserConnections(req.user.id);
+    const connMap = {};
+    userConns.forEach(c => {
+      const otherId = c.requester_id === req.user.id ? c.receiver_id : c.requester_id;
+      connMap[otherId] = { status: c.status, direction: c.requester_id === req.user.id ? 'sent' : 'received' };
+    });
+    const enriched = profiles.map(p => ({
+      ...p,
+      connection_status: connMap[p.user_id] || { status: 'none' }
+    }));
+
+    res.json({ success: true, profiles: enriched });
   } catch (err) {
     console.error('[network] directory error:', err);
     if (err.message && err.message.includes('does not exist')) {
@@ -119,6 +138,7 @@ router.post('/connections/:id/respond', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid action' });
     }
     const result = await store.respondToConnection(req.params.id, req.user.id, action);
+    if (result.success) trustScore.recalculate(req.user.id).catch(() => {});
     res.json(result);
   } catch (err) {
     console.error('[network] respond error:', err);

@@ -6,6 +6,15 @@
 -- Drop all existing tables
 DROP TABLE IF EXISTS backups CASCADE;
 DROP TABLE IF EXISTS app_settings CASCADE;
+DROP TABLE IF EXISTS user_preferences CASCADE;
+DROP TABLE IF EXISTS verification_tokens CASCADE;
+DROP TABLE IF EXISTS trust_scores CASCADE;
+DROP TABLE IF EXISTS user_flags CASCADE;
+DROP TABLE IF EXISTS messages CASCADE;
+DROP TABLE IF EXISTS folder_collaborators CASCADE;
+DROP TABLE IF EXISTS connections CASCADE;
+DROP TABLE IF EXISTS business_profiles CASCADE;
+DROP TABLE IF EXISTS businesses CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS trash CASCADE;
@@ -58,6 +67,11 @@ CREATE TABLE users (
   name TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
   avatar TEXT,
+  email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_level TEXT NOT NULL DEFAULT 'none',
+  domain TEXT,
+  domain_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_badge BOOLEAN NOT NULL DEFAULT FALSE,
   created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
   updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
@@ -81,6 +95,18 @@ CREATE TABLE user_preferences (
   preferences JSONB NOT NULL DEFAULT '{}',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Email / domain verification tokens
+CREATE TABLE verification_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL DEFAULT 'email',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_verification_tokens_token ON verification_tokens(token);
+CREATE INDEX idx_verification_tokens_user ON verification_tokens(user_id);
 
 -- Business profiles (B2B networking)
 CREATE TABLE business_profiles (
@@ -123,6 +149,34 @@ CREATE TABLE messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Trust scores (cached per-user score breakdown)
+CREATE TABLE trust_scores (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  total INTEGER NOT NULL DEFAULT 0,
+  identity_score INTEGER NOT NULL DEFAULT 0,
+  business_score INTEGER NOT NULL DEFAULT 0,
+  behavior_score INTEGER NOT NULL DEFAULT 0,
+  reputation_score INTEGER NOT NULL DEFAULT 0,
+  penalties INTEGER NOT NULL DEFAULT 0,
+  breakdown JSONB NOT NULL DEFAULT '{}',
+  calculated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- User flags / disputes (drives penalty deductions)
+CREATE TABLE user_flags (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'flag',
+  reason TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL DEFAULT 'low',
+  resolved BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+CREATE INDEX idx_user_flags_user ON user_flags(user_id);
+CREATE INDEX idx_user_flags_resolved ON user_flags(resolved);
+
 CREATE INDEX idx_connections_requester ON connections(requester_id);
 CREATE INDEX idx_connections_receiver ON connections(receiver_id);
 CREATE INDEX idx_connections_status ON connections(status);
@@ -134,36 +188,33 @@ CREATE INDEX idx_business_profiles_visibility ON business_profiles(visibility);
 -- Seed default title
 INSERT INTO app_settings (key, value) VALUES ('title', 'MonoStock');
 
--- Enable RLS on all tables
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_folders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE trash ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE backups ENABLE ROW LEVEL SECURITY;
+-- ============================================================
+-- Row Level Security
+--
+-- All data access goes through the Express server which uses
+-- the Supabase service_role key (bypasses RLS automatically).
+-- These policies DENY direct access via the anon/authenticated
+-- keys so that even if the Supabase URL + anon key leak, no
+-- data is exposed.
+-- ============================================================
 
--- Open access policies (tighten for production)
-CREATE POLICY "full_access" ON orders         FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON customers      FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON inventory      FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON order_folders  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON trash          FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON products       FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON users          FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON app_settings   FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "full_access" ON backups           FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE orders              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_folders       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trash               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backups             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_preferences    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verification_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE business_profiles   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE connections         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trust_scores        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_flags          ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "full_access" ON user_preferences  FOR ALL USING (true) WITH CHECK (true);
-
-ALTER TABLE business_profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "full_access" ON business_profiles FOR ALL USING (true) WITH CHECK (true);
-
-ALTER TABLE connections ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "full_access" ON connections FOR ALL USING (true) WITH CHECK (true);
-
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "full_access" ON messages FOR ALL USING (true) WITH CHECK (true);
+-- No permissive policies are created.
+-- RLS enabled + no matching policy = deny all for anon/authenticated roles.
+-- The service_role key used by the Express server bypasses RLS entirely.

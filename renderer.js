@@ -2091,9 +2091,19 @@ function renderProfilePage() {
       </div>
       <div>
         <h3 style="margin:0 0 4px; -webkit-text-fill-color:unset; background:none; border:none; padding:0;
-          color:var(--text-color); font-size:1.3em;">${currentUser.name}</h3>
+          color:var(--text-color); font-size:1.3em; display:flex; align-items:center; gap:6px;">
+          ${currentUser.name}${currentUser.verification_badge ? _verificationBadgeHTML(20) : ''}
+        </h3>
         <p style="margin:0; opacity:0.6; font-size:0.92em;">${currentUser.email}</p>
         <p style="margin:4px 0 0; opacity:0.45; font-size:0.82em;">Member since ${memberSince}</p>
+      </div>
+    </div>
+
+    <!-- Trust Score -->
+    <div class="settings-section">
+      <h3>Trust Score</h3>
+      <div id="profile-trust-score">
+        <div class="empty-state" style="padding:20px;">Loading trust score…</div>
       </div>
     </div>
 
@@ -2114,6 +2124,17 @@ function renderProfilePage() {
       </div>
       <div style="margin-top:16px;">
         <button id="profile-save-btn">Save Changes</button>
+      </div>
+    </div>
+
+    <!-- Verification -->
+    <div class="settings-section">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        Verification
+        ${_verificationBadgeHTML(22)}
+      </h3>
+      <div id="verification-section">
+        <div class="empty-state" style="padding:20px;">Loading verification status…</div>
       </div>
     </div>
 
@@ -2159,8 +2180,320 @@ function renderProfilePage() {
   document.getElementById("pw-change-btn").onclick = handlePasswordChange;
   document.getElementById("profile-logout-btn").onclick = handleLogout;
 
+  _loadVerificationSection();
+  _loadTrustScoreSection(currentUser.id, 'profile-trust-score');
+
   renderNav("profile");
   applySettings();
+}
+
+// ── Verification badge + section ──
+
+function _verificationBadgeHTML(size = 18) {
+  return `<img src="assets/verified-badge.png" class="verified-badge" style="width:${size}px;height:${size}px;" title="Verified" draggable="false">`;
+}
+
+// ── Trust Score UI ──
+
+function _trustScoreColor(score) {
+  if (score >= 80) return '#4CAF50';
+  if (score >= 60) return '#8BC34A';
+  if (score >= 40) return '#FFC107';
+  if (score >= 20) return '#FF9800';
+  return '#F44336';
+}
+
+function _trustScoreRingHTML(score, size = 72) {
+  const r = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (score / 100) * circ;
+  const color = _trustScoreColor(score);
+  return `<div class="trust-score-ring" style="width:${size}px;height:${size}px;">
+    <svg width="${size}" height="${size}">
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border-color)" stroke-width="5"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="5"
+        stroke-dasharray="${circ}" stroke-dashoffset="${offset}" stroke-linecap="round"/>
+    </svg>
+    <div class="score-label" style="color:${color};">${score}</div>
+  </div>`;
+}
+
+function _trustBarHTML(label, score, max, color) {
+  const pct = max > 0 ? (score / max * 100).toFixed(0) : 0;
+  return `<div class="trust-bar-item">
+    <div class="trust-bar-label"><span>${label}</span><span>${score}/${max}</span></div>
+    <div class="trust-bar-track"><div class="trust-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+  </div>`;
+}
+
+function _trustChecklistItems(breakdown) {
+  const items = [];
+  const id = breakdown.identity?.details || {};
+  const bz = breakdown.business?.details || {};
+  const bh = breakdown.behavior?.details || {};
+  const rp = breakdown.reputation?.details || {};
+
+  // Identity (40 pts)
+  items.push({ cat: 'Identity', label: 'Verify your email', pts: 12, earned: id.email_verified || 0, color: '#4F8EF7' });
+  items.push({ cat: 'Identity', label: 'Verify your domain', pts: 12, earned: id.domain_verified || 0, color: '#4F8EF7' });
+  items.push({ cat: 'Identity', label: 'Earn verification badge', pts: 6, earned: id.verification_badge || 0, color: '#4F8EF7' });
+  items.push({ cat: 'Identity', label: 'Set a profile avatar', pts: 4, earned: id.avatar || 0, color: '#4F8EF7' });
+  items.push({ cat: 'Identity', label: 'Account age (1pt / 30 days, max 6)', pts: 6, earned: id.account_age || 0, color: '#4F8EF7' });
+
+  // Business (30 pts)
+  items.push({ cat: 'Business', label: 'Set a company name', pts: 3, earned: bz.company_name || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Upload a logo', pts: 3, earned: bz.logo || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Write a description (>200 chars for full pts)', pts: 4, earned: bz.description || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Add industry tags (1pt each, max 3)', pts: 3, earned: bz.industry_tags || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Fill in location (city/state/country)', pts: 3, earned: bz.location || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Set a business type', pts: 2, earned: bz.business_type || 0, color: '#9C27B0' });
+  items.push({ cat: 'Business', label: 'Make connections (2pts each, max 12)', pts: 12, earned: bz.connections || 0, color: '#9C27B0' });
+
+  // Behavior (20 pts)
+  items.push({ cat: 'Behavior', label: 'Send messages (1pt per 5 sent, max 6)', pts: 6, earned: bh.messages_sent || 0, color: '#FF9800' });
+  items.push({ cat: 'Behavior', label: 'Receive messages (1pt per 5, max 4)', pts: 4, earned: bh.responsiveness || 0, color: '#FF9800' });
+  items.push({ cat: 'Behavior', label: 'Create orders (1pt per 2, max 6)', pts: 6, earned: bh.order_activity || 0, color: '#FF9800' });
+  items.push({ cat: 'Behavior', label: 'Recent activity (7d=4, 30d=2, 90d=1)', pts: 4, earned: bh.recent_activity || 0, color: '#FF9800' });
+
+  // Reputation (10 pts)
+  items.push({ cat: 'Reputation', label: 'Connection acceptance rate', pts: 5, earned: rp.acceptance_rate || 0, color: '#4CAF50' });
+  items.push({ cat: 'Reputation', label: 'Not blocked by others', pts: 3, earned: rp.no_blocks || 0, color: '#4CAF50' });
+  items.push({ cat: 'Reputation', label: 'No unresolved flags', pts: 2, earned: rp.clean_record || 0, color: '#4CAF50' });
+
+  return items;
+}
+
+function _trustChecklistHTML(breakdown) {
+  const items = _trustChecklistItems(breakdown);
+  const cats = ['Identity', 'Business', 'Behavior', 'Reputation'];
+  const incomplete = items.filter(i => i.earned < i.pts).length;
+  const uid = Math.random().toString(36).slice(2, 8);
+
+  let html = `<div class="trust-checklist">
+    <button class="trust-checklist-toggle" onclick="this.parentElement.classList.toggle('open')">
+      <span class="trust-checklist-arrow">&#9656;</span>
+      <span>Improve your score</span>
+      ${incomplete > 0 ? `<span class="trust-checklist-badge">${incomplete} remaining</span>` : '<span class="trust-checklist-badge done">All complete!</span>'}
+    </button>
+    <div class="trust-checklist-body">`;
+
+  for (const cat of cats) {
+    const group = items.filter(i => i.cat === cat);
+    const color = group[0]?.color || '#888';
+    html += `<div class="trust-checklist-group">
+      <div class="trust-checklist-cat" style="color:${color};">${cat}</div>`;
+    for (const item of group) {
+      const done = item.earned >= item.pts;
+      const partial = !done && item.earned > 0;
+      const icon = done ? '&#10003;' : '&#9744;';
+      const cls = done ? 'done' : partial ? 'partial' : '';
+      html += `<div class="trust-checklist-item ${cls}">
+        <span class="trust-check-icon">${icon}</span>
+        <span class="trust-check-label">${item.label}</span>
+        <span class="trust-check-pts">${item.earned}/${item.pts}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+function _trustScoreBreakdownHTML(data, { showChecklist = true } = {}) {
+  if (!data || !data.breakdown) return '';
+  const b = data.breakdown;
+  return `
+    <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      ${_trustScoreRingHTML(data.total || 0)}
+      <div style="flex:1;min-width:200px;">
+        <div style="font-weight:700;font-size:1.1em;margin-bottom:2px;">Trust Score</div>
+        <div style="opacity:0.5;font-size:0.82em;">
+          ${data.total >= 80 ? 'Excellent' : data.total >= 60 ? 'Good' : data.total >= 40 ? 'Fair' : data.total >= 20 ? 'Low' : 'Very Low'}
+          ${data.penalties > 0 ? ` · <span style="color:var(--danger-color);">-${data.penalties} penalty</span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="trust-breakdown">
+      ${_trustBarHTML('Identity', b.identity?.score || 0, b.identity?.max || 40, '#4F8EF7')}
+      ${_trustBarHTML('Business', b.business?.score || 0, b.business?.max || 30, '#9C27B0')}
+      ${_trustBarHTML('Behavior', b.behavior?.score || 0, b.behavior?.max || 20, '#FF9800')}
+      ${_trustBarHTML('Reputation', b.reputation?.score || 0, b.reputation?.max || 10, '#4CAF50')}
+    </div>
+    ${showChecklist ? _trustChecklistHTML(b) : ''}`;
+}
+
+async function _loadTrustScoreSection(userId, containerId, opts = {}) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  try {
+    const res = await window.dashboardAPI.getTrustScore(userId);
+    if (!res.success) {
+      container.innerHTML = '<div style="opacity:0.4;font-size:0.85em;">Trust score unavailable</div>';
+      return;
+    }
+    container.innerHTML = _trustScoreBreakdownHTML(res, opts);
+  } catch (e) {
+    container.innerHTML = '<div style="opacity:0.4;font-size:0.85em;">Trust score unavailable</div>';
+  }
+}
+
+async function _loadVerificationSection() {
+  const container = document.getElementById('verification-section');
+  if (!container) return;
+
+  try {
+    const v = await window.dashboardAPI.getVerificationStatus();
+    if (!v.success) {
+      container.innerHTML = '<div class="empty-state">Could not load verification status.</div>';
+      return;
+    }
+    _renderVerificationUI(container, v);
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state">Verification service unavailable.</div>';
+  }
+}
+
+function _renderVerificationUI(container, v) {
+  const emailDone = !!v.email_verified;
+  const domainDone = !!v.domain_verified;
+
+  let emailContent;
+  if (emailDone) {
+    emailContent = `<div style="display:flex;align-items:center;gap:8px;color:var(--success-color);font-weight:600;">
+      ✓ Email verified (${currentUser?.email || ''})
+    </div>`;
+  } else {
+    emailContent = `
+      <p style="opacity:0.6;margin:0 0 12px;">Verify your email address to unlock Level 1 verification.</p>
+      <button id="btn-send-verify-email" onclick="_handleSendVerifyEmail()">Send Verification Email</button>
+      <div id="verify-email-msg" style="margin-top:8px;font-size:0.85em;"></div>`;
+  }
+
+  let domainContent;
+  if (!emailDone) {
+    domainContent = `<p style="opacity:0.45;margin:0;">Complete email verification first to unlock domain verification.</p>`;
+  } else if (domainDone) {
+    domainContent = `<div style="display:flex;align-items:center;gap:8px;color:var(--success-color);font-weight:600;">
+      ✓ Domain verified (${v.domain || ''}) — ${_verificationBadgeHTML(18)} Badge earned!
+    </div>`;
+  } else {
+    const hasPending = v.domain && v.domain_txt;
+    domainContent = `
+      <p style="opacity:0.6;margin:0 0 12px;">Prove you own a domain to earn the ${_verificationBadgeHTML(16)} verification badge.</p>
+      <div style="margin-bottom:12px;">
+        <label style="font-weight:600;font-size:0.9em;display:block;margin-bottom:6px;">Your Domain</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="verify-domain-input" placeholder="example.com" value="${v.domain || ''}" style="flex:1;min-width:200px;">
+          <button id="btn-start-domain" onclick="_handleStartDomain()">Get TXT Record</button>
+        </div>
+      </div>
+      ${hasPending ? `
+        <div style="margin-bottom:12px;">
+          <label style="font-weight:600;font-size:0.9em;display:block;margin-bottom:6px;">Add this TXT record to your domain's DNS</label>
+          <div class="verification-txt-box" onclick="_copyTxt(this)" title="Click to copy">
+            ${v.domain_txt}
+          </div>
+          <p style="font-size:0.82em;opacity:0.5;margin:0 0 12px;">Add as a TXT record on <strong>${v.domain}</strong>. DNS propagation can take up to 48 hours.</p>
+          <button id="btn-check-domain" onclick="_handleCheckDomain()">Check DNS Record</button>
+        </div>` : ''}
+      <div id="verify-domain-msg" style="margin-top:8px;font-size:0.85em;"></div>`;
+  }
+
+  container.innerHTML = `
+    <div class="verification-card${emailDone ? ' done' : ''}">
+      <div class="verification-step-header">
+        <div class="verification-step-num">${emailDone ? '✓' : '1'}</div>
+        <div><strong>Email Verification</strong></div>
+      </div>
+      ${emailContent}
+    </div>
+    <div class="verification-card${domainDone ? ' done' : ''}">
+      <div class="verification-step-header">
+        <div class="verification-step-num">${domainDone ? '✓' : '2'}</div>
+        <div><strong>Domain Verification</strong> <span style="opacity:0.4;font-size:0.85em;">— optional</span></div>
+      </div>
+      ${domainContent}
+    </div>`;
+}
+
+async function _handleSendVerifyEmail() {
+  const btn = document.getElementById('btn-send-verify-email');
+  const msg = document.getElementById('verify-email-msg');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const res = await window.dashboardAPI.sendVerificationEmail();
+    if (res.already_verified) {
+      if (msg) msg.innerHTML = '<span style="color:var(--success-color);">Your email is already verified!</span>';
+      setTimeout(() => _loadVerificationSection(), 1000);
+    } else if (res.sent) {
+      if (msg) msg.innerHTML = '<span style="color:var(--success-color);">Verification email sent! Check your inbox.</span>';
+      showToast('Verification email sent', 'success');
+    } else if (res.token) {
+      if (msg) msg.innerHTML = `<span style="color:var(--warning-color);">SMTP not configured. <a href="/api/verification/verify-email?token=${res.token}" target="_blank" style="color:var(--accent-color);">Click here to verify manually</a>.</span>`;
+    } else {
+      if (msg) msg.innerHTML = '<span style="color:var(--danger-color);">Failed to send email.</span>';
+    }
+  } catch (err) {
+    if (msg) msg.innerHTML = `<span style="color:var(--danger-color);">${err.message || 'Failed'}</span>`;
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Send Verification Email'; }
+}
+
+async function _handleStartDomain() {
+  const input = document.getElementById('verify-domain-input');
+  const msg = document.getElementById('verify-domain-msg');
+  const btn = document.getElementById('btn-start-domain');
+  const domain = input?.value.trim();
+  if (!domain) { showToast('Enter a domain', 'warning'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+
+  try {
+    const res = await window.dashboardAPI.startDomainVerification(domain);
+    if (res.success) {
+      showToast('TXT record generated', 'success');
+      await _loadVerificationSection();
+    } else {
+      if (msg) msg.innerHTML = `<span style="color:var(--danger-color);">${res.error || 'Failed'}</span>`;
+    }
+  } catch (err) {
+    if (msg) msg.innerHTML = `<span style="color:var(--danger-color);">${err.message || 'Failed'}</span>`;
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Get TXT Record'; }
+}
+
+async function _handleCheckDomain() {
+  const msg = document.getElementById('verify-domain-msg');
+  const btn = document.getElementById('btn-check-domain');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking DNS…'; }
+
+  try {
+    const res = await window.dashboardAPI.verifyDomain();
+    if (res.success && res.domain_verified) {
+      showToast('Domain verified! Badge earned!', 'success');
+      if (currentUser) currentUser.verification_badge = true;
+      await _loadVerificationSection();
+    } else if (res.already_verified) {
+      showToast('Domain already verified!', 'success');
+      await _loadVerificationSection();
+    } else {
+      if (msg) msg.innerHTML = `<span style="color:var(--danger-color);">${res.error || 'Verification failed'}</span>`;
+    }
+  } catch (err) {
+    if (msg) msg.innerHTML = `<span style="color:var(--danger-color);">${err.message || 'Failed'}</span>`;
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Check DNS Record'; }
+}
+
+function _copyTxt(el) {
+  navigator.clipboard.writeText(el.textContent.trim()).then(() => {
+    showToast('Copied to clipboard', 'success');
+  });
 }
 
 function pickProfilePicture() {
@@ -2494,7 +2827,7 @@ function getDashboardKPIs() {
 }
 
 // ---------------- DASHBOARD ----------------
-function renderDashboard() {
+async function renderDashboard() {
   if (!appDiv) {
     console.error("Cannot render dashboard: appDiv not found");
     return;
@@ -2516,6 +2849,17 @@ function renderDashboard() {
   const showCost     = dc.costVsSell ?? true;
   const showProfit   = dc.customerProfit ?? true;
   const showAlerts   = dc.alerts ?? true;
+
+  let dashNetworkPending = 0;
+  let dashNetworkUnread = 0;
+  try {
+    const [pRes, uRes] = await Promise.all([
+      window.dashboardAPI.getPendingRequests(),
+      window.dashboardAPI.getUnreadCount()
+    ]);
+    dashNetworkPending = (pRes.requests || []).length;
+    dashNetworkUnread = uRes.count || 0;
+  } catch (_) {}
 
   const kpis = getDashboardKPIs();
   const cur = getCurrency();
@@ -2568,6 +2912,11 @@ function renderDashboard() {
       </div>
     </div>
     
+    ${showAlerts ? `<div class="card">
+      <h2>${t("alertsTitle")}</h2>
+      <ul id="alerts"></ul>
+    </div>` : ""}
+
     ${showPending ? `<div class="card">
       <h2>${t("pendingOrdersTitle")}</h2>
       <table id="summary-table">
@@ -2615,11 +2964,6 @@ function renderDashboard() {
         <div id="customerProfitTable"></div>
       </div>
     </div>` : ""}
-
-    ${showAlerts ? `<div class="card">
-      <h2>${t("alertsTitle")}</h2>
-      <ul id="alerts"></ul>
-    </div>` : ""}
   `;
 
   // KPI card click navigation
@@ -2661,6 +3005,18 @@ function renderDashboard() {
   if (alertsEl) {
     let alertHTML = "";
 
+    if (dashNetworkPending > 0) {
+      alertHTML += `<li style="border-left-color: var(--accent-color); cursor:pointer;" onclick="renderNetworkPage('requests')">
+        <strong>${dashNetworkPending}</strong> pending connection request${dashNetworkPending > 1 ? 's' : ''}
+      </li>`;
+    }
+
+    if (dashNetworkUnread > 0) {
+      alertHTML += `<li style="border-left-color: var(--accent-color); cursor:pointer;" onclick="renderNetworkPage('messages')">
+        <strong>${dashNetworkUnread}</strong> unread message${dashNetworkUnread > 1 ? 's' : ''}
+      </li>`;
+    }
+
     pendingOrders.forEach(o => {
       alertHTML += `<li style="border-left-color: var(--warning-color);">${t("orderLabel")} <strong>${o.orderNumber || "—"}</strong> ${t("alertIsPending")}</li>`;
     });
@@ -2671,7 +3027,6 @@ function renderDashboard() {
         alertHTML += `<li style="border-left-color: var(--danger-color);">${t("orderLabel")} <strong>${o.orderNumber || "—"}</strong> ${t("alertRequiresMaintenance")}</li>`;
       });
 
-    // Low stock inventory alerts
     (dashboardData.inventory || []).forEach(item => {
       const delta = (item.required || 0) - (item.inStock || 0);
       if (delta > 0 && item.material) {
@@ -2679,7 +3034,6 @@ function renderDashboard() {
       }
     });
 
-    // Orders without budgets
     const noBudget = dashboardData.orders.filter(o => !o.budget && (o.status || "").toLowerCase() !== "paid in full");
     if (noBudget.length > 0) {
       alertHTML += `<li style="border-left-color: var(--info-color);"><strong>${noBudget.length}</strong> ${noBudget.length > 1 ? t("alertWithoutBudgetPlural") : t("alertWithoutBudget")}</li>`;
@@ -6725,6 +7079,7 @@ const BUSINESS_TYPES = ['Manufacturer', 'Supplier', 'Distributor', 'Retailer', '
 let networkSubPage = 'directory';
 let networkProfileCache = null;
 let networkPendingCount = 0;
+let networkUnreadCount = 0;
 let networkChatPartner = null;
 
 async function renderNetworkPage(sub) {
@@ -6735,8 +7090,12 @@ async function renderNetworkPage(sub) {
 
   renderNav('network');
 
-  const reqRes = await window.dashboardAPI.getPendingRequests();
+  const [reqRes, unreadRes] = await Promise.all([
+    window.dashboardAPI.getPendingRequests(),
+    window.dashboardAPI.getUnreadCount()
+  ]);
   networkPendingCount = (reqRes.requests || []).length;
+  networkUnreadCount = unreadRes.count || 0;
 
   appDiv.innerHTML = `
     <h1>Network</h1>
@@ -6763,7 +7122,7 @@ function _renderNetworkTabs() {
     { id: 'directory', label: 'Directory' },
     { id: 'connections', label: 'Connections' },
     { id: 'requests', label: 'Requests', badge: networkPendingCount },
-    { id: 'messages', label: 'Messages' },
+    { id: 'messages', label: 'Messages', badge: networkUnreadCount },
     { id: 'profile', label: 'My Profile' }
   ];
   tabs.innerHTML = items.map(t =>
@@ -6788,10 +7147,12 @@ async function _renderDirectory() {
         </div>
         <div class="search-field">
           <label>Industry</label>
-          <select id="net-search-industry">
+          <select id="net-search-industry" onchange="_onIndustryFilterChange()">
             <option value="">All Industries</option>
             ${INDUSTRY_OPTIONS.map(i => `<option value="${i}">${i}</option>`).join('')}
           </select>
+          <input type="text" id="net-search-industry-custom" placeholder="Type an industry…"
+            style="display:none;margin-top:6px;" />
         </div>
         <div class="search-field">
           <label>Type</label>
@@ -6814,8 +7175,23 @@ async function _renderDirectory() {
     .addEventListener('keydown', e => { if (e.key === 'Enter') _executeDirectorySearch(); });
   document.getElementById('net-search-location')
     .addEventListener('keydown', e => { if (e.key === 'Enter') _executeDirectorySearch(); });
+  document.getElementById('net-search-industry-custom')
+    .addEventListener('keydown', e => { if (e.key === 'Enter') _executeDirectorySearch(); });
 
   await _executeDirectorySearch();
+}
+
+function _onIndustryFilterChange() {
+  const sel = document.getElementById('net-search-industry');
+  const custom = document.getElementById('net-search-industry-custom');
+  if (!sel || !custom) return;
+  if (sel.value === 'Other') {
+    custom.style.display = '';
+    custom.focus();
+  } else {
+    custom.style.display = 'none';
+    custom.value = '';
+  }
 }
 
 async function _executeDirectorySearch() {
@@ -6823,9 +7199,13 @@ async function _executeDirectorySearch() {
   if (!results) return;
   results.innerHTML = '<div class="empty-state" style="padding:30px;">Searching…</div>';
 
+  const industryVal = document.getElementById('net-search-industry')?.value || '';
+  const customIndustry = document.getElementById('net-search-industry-custom')?.value.trim() || '';
+
   const params = {
     keyword: document.getElementById('net-search-keyword')?.value || '',
-    industry: document.getElementById('net-search-industry')?.value || '',
+    industry: industryVal === 'Other' ? '' : industryVal,
+    industry_custom: industryVal === 'Other' ? customIndustry : '',
     business_type: document.getElementById('net-search-type')?.value || '',
     location: document.getElementById('net-search-location')?.value || ''
   };
@@ -6845,16 +7225,25 @@ function _bizCardHTML(p, opts = {}) {
   const logoHTML = p.logo
     ? `<img src="${p.logo}" alt="${_esc(p.company_name)}">`
     : (p.company_name || '?').charAt(0).toUpperCase();
-  const locParts = [p.city, p.state, p.country].filter(Boolean);
+  const locParts = p.hide_location ? [] : [p.city, p.state, p.country].filter(Boolean);
   const locationStr = locParts.length > 0 ? locParts.join(', ') : '';
   const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
 
   let actionsHTML = '';
   if (!opts.hideActions) {
     const uid = p.user_id;
+    const cs = p.connection_status || { status: 'none' };
+    let connectBtnHTML;
+    if (cs.status === 'connected') {
+      connectBtnHTML = `<button disabled style="background:var(--border-color);color:var(--text-color);opacity:0.7;cursor:default;">Connected</button>`;
+    } else if (cs.status === 'pending') {
+      connectBtnHTML = `<button disabled style="background:var(--border-color);color:var(--text-color);opacity:0.7;cursor:default;">Request Sent</button>`;
+    } else {
+      connectBtnHTML = `<button onclick="_connectWith('${uid}')">Connect</button>`;
+    }
     actionsHTML = `
       <div class="biz-card-actions">
-        <button onclick="_connectWith('${uid}')">Connect</button>
+        ${connectBtnHTML}
         <button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>
       </div>`;
   }
@@ -6874,7 +7263,7 @@ function _bizCardHTML(p, opts = {}) {
       <div class="biz-card-header">
         <div class="biz-card-logo">${logoHTML}</div>
         <div>
-          <div class="biz-card-name">${_esc(p.company_name)}</div>
+          <div class="biz-card-name">${_esc(p.company_name)}${p.verification_badge ? ' ' + _verificationBadgeHTML(16) : ''}</div>
           <div class="biz-card-type">${_esc(p.business_type || '')}</div>
         </div>
       </div>
@@ -6889,6 +7278,7 @@ async function _connectWith(userId) {
   const res = await window.dashboardAPI.sendConnectionRequest(userId);
   if (res.success) {
     showToast('Connection request sent!', 'success');
+    await _executeDirectorySearch();
   } else {
     showToast(res.error || 'Could not send request', 'warning');
   }
@@ -6922,7 +7312,7 @@ async function _viewProfile(userId) {
     ? `<img src="${p.logo}" style="width:72px;height:72px;border-radius:16px;object-fit:cover;">`
     : `<div style="width:72px;height:72px;border-radius:16px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:var(--accent-color);">${(p.company_name || '?').charAt(0).toUpperCase()}</div>`;
 
-  const locParts = [p.city, p.state, p.country].filter(Boolean);
+  const locParts = p.hide_location ? [] : [p.city, p.state, p.country].filter(Boolean);
   const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
 
   let connectBtn = '';
@@ -6941,14 +7331,17 @@ async function _viewProfile(userId) {
       <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
         ${logoHTML}
         <div>
-          <h3 style="margin:0;">${_esc(p.company_name)}</h3>
+          <h3 style="margin:0;display:flex;align-items:center;gap:6px;">${_esc(p.company_name)}${p.verification_badge ? _verificationBadgeHTML(20) : ''}</h3>
           <div style="opacity:0.55;font-size:0.9em;margin-top:2px;">${_esc(p.business_type || '')}</div>
         </div>
       </div>
       ${p.description ? `<p style="margin:0 0 14px;opacity:0.75;line-height:1.6;">${_esc(p.description)}</p>` : ''}
       ${tags ? `<div class="biz-card-tags" style="margin-bottom:14px;">${tags}</div>` : ''}
-      ${locParts.length ? `<p style="margin:0 0 20px;opacity:0.55;font-size:0.9em;">📍 ${_esc(locParts.join(', '))}</p>` : ''}
-      <div style="display:flex;gap:10px;justify-content:flex-end;">
+      ${locParts.length ? `<p style="margin:0 0 14px;opacity:0.55;font-size:0.9em;">📍 ${_esc(locParts.join(', '))}</p>` : ''}
+      <div id="modal-trust-score-${userId}" style="border-top:1px solid var(--border-color);padding-top:14px;margin-bottom:24px;">
+        <div style="opacity:0.4;font-size:0.82em;">Loading trust score…</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:10px;border-top:1px solid var(--border-color);">
         ${connectBtn}
         <button style="background:var(--border-color);color:var(--text-color);" onclick="this.closest('.modal').remove()">Close</button>
       </div>
@@ -6956,6 +7349,7 @@ async function _viewProfile(userId) {
   `;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
+  _loadTrustScoreSection(userId, `modal-trust-score-${userId}`, { showChecklist: false });
 }
 
 // ── Connections ──
@@ -7021,7 +7415,7 @@ async function _renderRequests() {
               ${logo}
               <div style="flex:1;">
                 <div style="font-weight:600;">${_esc(name)}</div>
-                <div style="font-size:0.82em;opacity:0.55;">${_esc(p.business_type || '')}${p.city ? ` · ${_esc(p.city)}` : ''}</div>
+                <div style="font-size:0.82em;opacity:0.55;">${_esc(p.business_type || '')}${!p.hide_location && p.city ? ` · ${_esc(p.city)}` : ''}</div>
               </div>
               <button class="btn-sm btn-success" onclick="_respondRequest('${r.id}','accept')">Accept</button>
               <button class="btn-sm btn-outline" onclick="_respondRequest('${r.id}','decline')">Decline</button>

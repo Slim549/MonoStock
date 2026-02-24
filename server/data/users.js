@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const supabase = require('./supabase');
 
@@ -34,6 +35,11 @@ async function createUser({ name, email, password }) {
     email: email.toLowerCase(),
     password_hash: hash,
     avatar: null,
+    email_verified: false,
+    verification_level: 'none',
+    domain: null,
+    domain_verified: false,
+    verification_badge: false,
     created_at: now,
     updated_at: now
   };
@@ -99,6 +105,11 @@ function toPublic(user) {
     name: user.name,
     email: user.email,
     avatar: user.avatar || null,
+    email_verified: !!user.email_verified,
+    verification_level: user.verification_level || 'none',
+    domain: user.domain || null,
+    domain_verified: !!user.domain_verified,
+    verification_badge: !!user.verification_badge,
     createdAt: user.created_at
   };
 }
@@ -115,6 +126,109 @@ async function searchUsers(query, excludeUserId) {
   return (data || []).filter(u => u.id !== excludeUserId);
 }
 
+// ── Email verification tokens ──
+
+async function createVerificationToken(userId, type = 'email') {
+  const { error: delErr } = await supabase
+    .from('verification_tokens')
+    .delete()
+    .eq('user_id', userId)
+    .eq('type', type);
+  if (delErr && delErr.code !== 'PGRST205') console.warn('[users] cleanup token error:', delErr);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const row = {
+    id: uuidv4(),
+    user_id: userId,
+    token,
+    type,
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    created_at: new Date().toISOString()
+  };
+
+  const { error } = await supabase.from('verification_tokens').insert(row);
+  if (error) throw error;
+  return token;
+}
+
+async function consumeVerificationToken(token, type = 'email') {
+  const { data, error } = await supabase
+    .from('verification_tokens')
+    .select('*')
+    .eq('token', token)
+    .eq('type', type)
+    .single();
+
+  if (error || !data) return null;
+
+  if (new Date(data.expires_at) < new Date()) {
+    await supabase.from('verification_tokens').delete().eq('id', data.id);
+    return null;
+  }
+
+  await supabase.from('verification_tokens').delete().eq('id', data.id);
+  return data;
+}
+
+async function setEmailVerified(userId) {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      email_verified: true,
+      verification_level: 'email_verified',
+      updated_at: Date.now()
+    })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+// ── Domain verification ──
+
+async function setDomain(userId, domain) {
+  const txtValue = 'monostock-verify=' + crypto.randomBytes(16).toString('hex');
+  const { error } = await supabase
+    .from('users')
+    .update({ domain, updated_at: Date.now() })
+    .eq('id', userId);
+  if (error) throw error;
+
+  const token = await createVerificationToken(userId, 'domain');
+  return { txtValue: 'monostock-verify=' + token, domain };
+}
+
+async function setDomainVerified(userId) {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      domain_verified: true,
+      verification_badge: true,
+      updated_at: Date.now()
+    })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+async function getRawUser(id) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
+}
+
+async function getDomainToken(userId) {
+  const { data, error } = await supabase
+    .from('verification_tokens')
+    .select('token')
+    .eq('user_id', userId)
+    .eq('type', 'domain')
+    .single();
+  if (error || !data) return null;
+  return data.token;
+}
+
 module.exports = {
   findByEmail,
   findById,
@@ -123,5 +237,12 @@ module.exports = {
   updateUser,
   changePassword,
   hasUsers,
-  searchUsers
+  searchUsers,
+  createVerificationToken,
+  consumeVerificationToken,
+  setEmailVerified,
+  setDomain,
+  setDomainVerified,
+  getRawUser,
+  getDomainToken
 };

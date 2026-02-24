@@ -1181,6 +1181,213 @@
       padding: 0 5px;
     }
 
+    .verified-badge {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      vertical-align: middle;
+      margin-left: 4px;
+      flex-shrink: 0;
+    }
+    .verified-badge-lg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .verification-card {
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .verification-card.done {
+      border-color: var(--success-color);
+      background: rgba(76, 175, 80, 0.04);
+    }
+    .verification-step-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .verification-step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9em;
+      background: var(--border-color);
+      color: var(--text-color);
+      flex-shrink: 0;
+    }
+    .verification-card.done .verification-step-num {
+      background: var(--success-color);
+      color: #fff;
+    }
+    .verification-txt-box {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-size: 0.85em;
+      word-break: break-all;
+      margin: 12px 0;
+      cursor: pointer;
+    }
+
+    .trust-score-ring {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      flex-shrink: 0;
+    }
+    .trust-score-ring svg {
+      transform: rotate(-90deg);
+    }
+    .trust-score-ring .score-label {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.15em;
+    }
+    .trust-breakdown {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .trust-bar-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .trust-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82em;
+      font-weight: 600;
+    }
+    .trust-bar-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      overflow: hidden;
+    }
+    .trust-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    /* ── Trust Score Checklist ── */
+    .trust-checklist {
+      margin-top: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .trust-checklist-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.88em;
+      font-weight: 600;
+      color: var(--text-color);
+      text-align: left;
+    }
+    .trust-checklist-toggle:hover {
+      background: var(--hover-bg, rgba(128,128,128,0.06));
+    }
+    .trust-checklist-arrow {
+      display: inline-block;
+      transition: transform 0.2s ease;
+      font-size: 0.85em;
+    }
+    .trust-checklist.open .trust-checklist-arrow {
+      transform: rotate(90deg);
+    }
+    .trust-checklist-badge {
+      margin-left: auto;
+      font-size: 0.78em;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--accent-color);
+      color: #fff;
+    }
+    .trust-checklist-badge.done {
+      background: #4CAF50;
+    }
+    .trust-checklist-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    .trust-checklist.open .trust-checklist-body {
+      max-height: 800px;
+    }
+    .trust-checklist-group {
+      padding: 6px 14px 10px;
+    }
+    .trust-checklist-group + .trust-checklist-group {
+      border-top: 1px solid var(--border-color);
+    }
+    .trust-checklist-cat {
+      font-weight: 700;
+      font-size: 0.8em;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .trust-checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 0.84em;
+      opacity: 0.75;
+    }
+    .trust-checklist-item.done {
+      opacity: 0.45;
+      text-decoration: line-through;
+    }
+    .trust-checklist-item.partial {
+      opacity: 0.9;
+    }
+    .trust-check-icon {
+      flex-shrink: 0;
+      width: 18px;
+      text-align: center;
+      font-size: 0.95em;
+    }
+    .trust-checklist-item.done .trust-check-icon {
+      color: #4CAF50;
+    }
+    .trust-checklist-item.partial .trust-check-icon {
+      color: #FF9800;
+    }
+    .trust-check-label {
+      flex: 1;
+    }
+    .trust-check-pts {
+      font-size: 0.78em;
+      font-weight: 600;
+      opacity: 0.6;
+      white-space: nowrap;
+    }
+
     .network-search-bar {
       display: flex;
       gap: 10px;

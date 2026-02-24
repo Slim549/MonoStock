@@ -32,6 +32,8 @@ app.use('/api/backups', require('./routes/backups'));
 app.use('/api/folders', require('./routes/collaborators'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/network', require('./routes/network'));
+app.use('/api/verification', require('./routes/verification'));
+app.use('/api/trust-score', require('./routes/trust-score'));
 
 // ── Serve static frontend files from the project root ──
 const webRoot = path.join(__dirname, '..');

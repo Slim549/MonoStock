@@ -25,6 +25,12 @@ router.post('/register', async (req, res) => {
     const result = await users.createUser({ name: name.trim(), email: email.trim(), password });
     if (result.error) return res.status(409).json({ error: result.error });
 
+    try {
+      await users.createVerificationToken(result.user.id, 'email');
+    } catch (tokenErr) {
+      console.warn('[auth] could not create verification token on signup:', tokenErr.message);
+    }
+
     const token = signToken(result.user);
     res.status(201).json({ success: true, token, user: result.user });
   } catch (err) {
