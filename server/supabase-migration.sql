@@ -27,37 +27,43 @@ DROP TABLE IF EXISTS orders CASCADE;
 CREATE TABLE orders (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Customers
 CREATE TABLE customers (
   id TEXT PRIMARY KEY,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT
 );
 
 -- Inventory
 CREATE TABLE inventory (
   id TEXT PRIMARY KEY,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT
 );
 
 -- Order folders
 CREATE TABLE order_folders (
   id TEXT PRIMARY KEY,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT
 );
 
 -- Trash (soft-deleted items)
 CREATE TABLE trash (
   id TEXT PRIMARY KEY,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT
 );
 
 -- Products
 CREATE TABLE products (
   id TEXT PRIMARY KEY,
-  data JSONB NOT NULL DEFAULT '{}'::jsonb
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id TEXT
 );
 
 -- Users (app-level auth)
@@ -86,6 +92,7 @@ CREATE TABLE app_settings (
 CREATE TABLE backups (
   id SERIAL PRIMARY KEY,
   data JSONB NOT NULL,
+  user_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -126,6 +133,17 @@ CREATE TABLE business_profiles (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id)
+);
+
+-- Folder collaborators (shared folder access)
+CREATE TABLE folder_collaborators (
+  id TEXT PRIMARY KEY,
+  folder_id TEXT NOT NULL REFERENCES order_folders(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'editor')),
+  invited_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(folder_id, user_id)
 );
 
 -- Connections between businesses
@@ -177,6 +195,9 @@ CREATE TABLE user_flags (
 CREATE INDEX idx_user_flags_user ON user_flags(user_id);
 CREATE INDEX idx_user_flags_resolved ON user_flags(resolved);
 
+CREATE INDEX idx_fc_folder ON folder_collaborators(folder_id);
+CREATE INDEX idx_fc_user   ON folder_collaborators(user_id);
+
 CREATE INDEX idx_connections_requester ON connections(requester_id);
 CREATE INDEX idx_connections_receiver ON connections(receiver_id);
 CREATE INDEX idx_connections_status ON connections(status);
@@ -184,6 +205,15 @@ CREATE INDEX idx_messages_sender ON messages(sender_id);
 CREATE INDEX idx_messages_receiver ON messages(receiver_id);
 CREATE INDEX idx_business_profiles_user ON business_profiles(user_id);
 CREATE INDEX idx_business_profiles_visibility ON business_profiles(visibility);
+
+-- Foreign keys for user_id on data tables (added after users table exists)
+ALTER TABLE orders       ADD CONSTRAINT fk_orders_user       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE customers    ADD CONSTRAINT fk_customers_user    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE inventory    ADD CONSTRAINT fk_inventory_user    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE order_folders ADD CONSTRAINT fk_order_folders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE trash        ADD CONSTRAINT fk_trash_user        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE products     ADD CONSTRAINT fk_products_user     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE backups      ADD CONSTRAINT fk_backups_user      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- Seed default title
 INSERT INTO app_settings (key, value) VALUES ('title', 'MonoStock');
@@ -214,6 +244,7 @@ ALTER TABLE connections         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trust_scores        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_flags          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE folder_collaborators ENABLE ROW LEVEL SECURITY;
 
 -- No permissive policies are created.
 -- RLS enabled + no matching policy = deny all for anon/authenticated roles.
