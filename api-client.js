@@ -377,6 +377,20 @@
     return apiJSON('/api/auth/status');
   }
 
+  async function authForgotPassword(email) {
+    return apiJSON('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+  }
+
+  async function authResetPassword(token, newPassword) {
+    return apiJSON('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword })
+    });
+  }
+
   // ── Verification API ──
 
   async function sendVerificationEmail() {
@@ -571,12 +585,27 @@
     catch (e) { return { success: false, requests: [] }; }
   }
 
-  async function sendNetworkMessage(userId, body) {
+  async function sendNetworkMessage(userId, body, opts = {}) {
     try {
+      const payload = { body };
+      if (opts.attachments) payload.attachments = opts.attachments;
+      if (opts.msg_type) payload.msg_type = opts.msg_type;
+      if (opts.metadata) payload.metadata = opts.metadata;
       return await apiJSON(`/api/network/messages/${userId}`, {
-        method: 'POST', body: JSON.stringify({ body })
+        method: 'POST', body: JSON.stringify(payload)
       });
     } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function acceptFolderInvite(messageId) {
+    try {
+      return await apiJSON(`/api/network/messages/${messageId}/accept-invite`, { method: 'POST' });
+    } catch (e) { return { success: false, error: e.message }; }
+  }
+
+  async function getMyFolders() {
+    try { return await apiJSON('/api/network/my-folders'); }
+    catch (e) { return { success: true, folders: [] }; }
   }
 
   async function getConversation(userId) {
@@ -663,6 +692,8 @@
     authChangePassword,
     authLogout,
     authStatus,
+    authForgotPassword,
+    authResetPassword,
     isLoggedIn: () => !!_getToken(),
 
     // ── Verification ──
@@ -688,6 +719,8 @@
     getConnections,
     getPendingRequests,
     sendNetworkMessage,
+    acceptFolderInvite,
+    getMyFolders,
     getConversation,
     getUnreadCount
   };

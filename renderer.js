@@ -140,6 +140,8 @@ window.addEventListener("popstate", () => {
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
   if (path === "/signin") renderLoginPage();
   else if (path === "/signup") renderSignupPage();
+  else if (path === "/forgot-password") renderForgotPasswordPage();
+  else if (path === "/reset-password") renderResetPasswordPage();
   else if (path === "/" || path === "") renderLandingPage();
 });
 
@@ -188,15 +190,10 @@ setTimeout(async () => {
 
   if (hasUsers && !currentUser) {
     const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
-    if (path === "/signin") {
-      renderLoginPage();
-      return;
-    }
-    if (path === "/signup") {
-      renderSignupPage();
-      return;
-    }
-    // Root or any other path: show landing page first
+    if (path === "/signin") { renderLoginPage(); return; }
+    if (path === "/signup") { renderSignupPage(); return; }
+    if (path === "/forgot-password") { renderForgotPasswordPage(); return; }
+    if (path === "/reset-password") { renderResetPasswordPage(); return; }
     renderLandingPage();
     return;
   }
@@ -1596,9 +1593,11 @@ function navigateTo(path) {
   if (window.history && window.history.pushState) {
     window.history.pushState({}, '', path);
   }
-  const p = (path || '/').replace(/\/+$/, '') || '/';
+  const p = (path || '/').replace(/\/+$/, '').split('?')[0] || '/';
   if (p === '/signin') renderLoginPage();
   else if (p === '/signup') renderSignupPage();
+  else if (p === '/forgot-password') renderForgotPasswordPage();
+  else if (p === '/reset-password') renderResetPasswordPage();
   else if (p === '/' || p === '') renderLandingPage();
 }
 
@@ -1896,6 +1895,9 @@ function renderLoginPage() {
           <input type="password" id="login-password" placeholder="Your password" autocomplete="current-password">
         </div>
         <button id="login-submit-btn" style="width:100%; padding:14px; font-size:1em;">Sign In</button>
+        <p style="text-align:right; margin:12px 0 0; font-size:0.85em;">
+          <a href="#" id="goto-forgot-pw" style="color:var(--info-color); text-decoration:none; opacity:0.8;">Forgot password?</a>
+        </p>
       </div>
       <p style="text-align:center; margin-top:20px; font-size:0.92em; opacity:0.75;">
         Don't have an account?
@@ -1906,6 +1908,7 @@ function renderLoginPage() {
 
   document.getElementById("login-back-home").onclick = (e) => { e.preventDefault(); navigateTo("/"); };
   document.getElementById("goto-signup").onclick = (e) => { e.preventDefault(); navigateTo("/signup"); };
+  document.getElementById("goto-forgot-pw").onclick = (e) => { e.preventDefault(); navigateTo("/forgot-password"); };
   document.getElementById("login-submit-btn").onclick = handleLogin;
   document.getElementById("login-password").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleLogin();
@@ -1948,6 +1951,197 @@ async function handleLogin() {
     errDiv.style.display = "block";
     btn.disabled = false;
     btn.textContent = "Sign In";
+  }
+}
+
+// ── Forgot Password Page ──
+
+function renderForgotPasswordPage() {
+  if (!appDiv) return;
+  window.currentPage = "forgot-password";
+  appDiv.classList.remove("landing-active");
+
+  const nav = document.getElementById("nav");
+  if (nav) nav.style.display = "none";
+  const menubar = document.getElementById("menubar");
+  if (menubar) menubar.style.display = "none";
+  settingsBtn.style.display = "none";
+  userAvatarBtn.style.display = "none";
+  document.body.style.paddingTop = "0";
+
+  appDiv.innerHTML = `
+    <div style="max-width:420px; margin:60px auto; padding:0 20px;">
+      <p style="margin:0 0 24px; font-size:0.9em;"><a href="/signin" id="fp-back-login" style="color:var(--info-color); text-decoration:none; font-weight:500;">← Back to Sign In</a></p>
+      <div style="text-align:center; margin-bottom:36px;">
+        <img src="assets/cube-logo.png" alt="MonoStock" style="width:90px; height:90px; border-radius:18px; margin-bottom:12px;">
+        <h1 style="margin:0 0 6px;">Forgot Password</h1>
+        <p style="opacity:0.6; margin:0; font-size:0.95em;">Enter your email and we'll send you a reset link</p>
+      </div>
+      <div class="card" style="padding:30px;">
+        <div id="fp-msg" style="display:none; padding:12px 16px; border-radius:10px; font-size:0.9em; margin-bottom:16px;"></div>
+        <div class="form-group" style="margin-bottom:20px;">
+          <label for="fp-email">Email</label>
+          <input type="email" id="fp-email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <button id="fp-submit-btn" style="width:100%; padding:14px; font-size:1em;">Send Reset Link</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("fp-back-login").onclick = (e) => { e.preventDefault(); navigateTo("/signin"); };
+  document.getElementById("fp-submit-btn").onclick = handleForgotPassword;
+  document.getElementById("fp-email").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleForgotPassword();
+  });
+  document.getElementById("fp-email").focus();
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById("fp-email").value.trim();
+  const msgDiv = document.getElementById("fp-msg");
+  const btn = document.getElementById("fp-submit-btn");
+
+  if (!email) {
+    msgDiv.textContent = "Please enter your email address.";
+    msgDiv.style.background = "rgba(239,68,68,0.1)";
+    msgDiv.style.border = "1px solid rgba(239,68,68,0.3)";
+    msgDiv.style.color = "var(--danger-color)";
+    msgDiv.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  msgDiv.style.display = "none";
+
+  try {
+    const res = await window.dashboardAPI.authForgotPassword(email);
+    msgDiv.textContent = res.message || "If that email is registered, a reset link has been sent.";
+    msgDiv.style.background = "rgba(34,197,94,0.1)";
+    msgDiv.style.border = "1px solid rgba(34,197,94,0.3)";
+    msgDiv.style.color = "var(--success-color, #22c55e)";
+    msgDiv.style.display = "block";
+    btn.textContent = "Link Sent";
+  } catch (err) {
+    msgDiv.textContent = err.message || "Something went wrong. Please try again.";
+    msgDiv.style.background = "rgba(239,68,68,0.1)";
+    msgDiv.style.border = "1px solid rgba(239,68,68,0.3)";
+    msgDiv.style.color = "var(--danger-color)";
+    msgDiv.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Send Reset Link";
+  }
+}
+
+// ── Reset Password Page (accessed from email link) ──
+
+function renderResetPasswordPage() {
+  if (!appDiv) return;
+  window.currentPage = "reset-password";
+  appDiv.classList.remove("landing-active");
+
+  const nav = document.getElementById("nav");
+  if (nav) nav.style.display = "none";
+  const menubar = document.getElementById("menubar");
+  if (menubar) menubar.style.display = "none";
+  settingsBtn.style.display = "none";
+  userAvatarBtn.style.display = "none";
+  document.body.style.paddingTop = "0";
+
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token") || "";
+
+  if (!token) {
+    appDiv.innerHTML = `
+      <div style="max-width:420px; margin:80px auto; padding:0 20px; text-align:center;">
+        <div class="card" style="padding:40px;">
+          <div style="font-size:48px; margin-bottom:16px;">&#10060;</div>
+          <h2 style="margin:0 0 8px;">Invalid Reset Link</h2>
+          <p style="opacity:0.6;">This link is missing or invalid. Please request a new one.</p>
+          <a href="/forgot-password" id="rp-goto-forgot" style="display:inline-block; margin-top:16px; color:var(--info-color); font-weight:600; text-decoration:none;">Request New Link</a>
+        </div>
+      </div>
+    `;
+    document.getElementById("rp-goto-forgot").onclick = (e) => { e.preventDefault(); navigateTo("/forgot-password"); };
+    return;
+  }
+
+  appDiv.innerHTML = `
+    <div style="max-width:420px; margin:60px auto; padding:0 20px;">
+      <div style="text-align:center; margin-bottom:36px;">
+        <img src="assets/cube-logo.png" alt="MonoStock" style="width:90px; height:90px; border-radius:18px; margin-bottom:12px;">
+        <h1 style="margin:0 0 6px;">Set New Password</h1>
+        <p style="opacity:0.6; margin:0; font-size:0.95em;">Choose a new password for your account</p>
+      </div>
+      <div class="card" style="padding:30px;">
+        <div id="rp-msg" style="display:none; padding:12px 16px; border-radius:10px; font-size:0.9em; margin-bottom:16px;"></div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="rp-password">New Password</label>
+          <input type="password" id="rp-password" placeholder="Min 6 characters" autocomplete="new-password">
+        </div>
+        <div class="form-group" style="margin-bottom:20px;">
+          <label for="rp-confirm">Confirm Password</label>
+          <input type="password" id="rp-confirm" placeholder="Re-enter password" autocomplete="new-password">
+        </div>
+        <button id="rp-submit-btn" style="width:100%; padding:14px; font-size:1em;">Reset Password</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("rp-submit-btn").onclick = () => handleResetPassword(token);
+  document.getElementById("rp-confirm").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleResetPassword(token);
+  });
+  document.getElementById("rp-password").focus();
+}
+
+async function handleResetPassword(token) {
+  const password = document.getElementById("rp-password").value;
+  const confirm = document.getElementById("rp-confirm").value;
+  const msgDiv = document.getElementById("rp-msg");
+  const btn = document.getElementById("rp-submit-btn");
+
+  if (password.length < 6) {
+    msgDiv.textContent = "Password must be at least 6 characters.";
+    msgDiv.style.background = "rgba(239,68,68,0.1)";
+    msgDiv.style.border = "1px solid rgba(239,68,68,0.3)";
+    msgDiv.style.color = "var(--danger-color)";
+    msgDiv.style.display = "block";
+    return;
+  }
+  if (password !== confirm) {
+    msgDiv.textContent = "Passwords don't match.";
+    msgDiv.style.background = "rgba(239,68,68,0.1)";
+    msgDiv.style.border = "1px solid rgba(239,68,68,0.3)";
+    msgDiv.style.color = "var(--danger-color)";
+    msgDiv.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Resetting…";
+  msgDiv.style.display = "none";
+
+  try {
+    const res = await window.dashboardAPI.authResetPassword(token, password);
+    msgDiv.innerHTML = (res.message || "Password has been reset!") +
+      ' <a href="/signin" id="rp-goto-login" style="color:var(--info-color); font-weight:600; text-decoration:none;">Sign in now →</a>';
+    msgDiv.style.background = "rgba(34,197,94,0.1)";
+    msgDiv.style.border = "1px solid rgba(34,197,94,0.3)";
+    msgDiv.style.color = "var(--success-color, #22c55e)";
+    msgDiv.style.display = "block";
+    btn.textContent = "Done";
+
+    const loginLink = document.getElementById("rp-goto-login");
+    if (loginLink) loginLink.onclick = (e) => { e.preventDefault(); navigateTo("/signin"); };
+  } catch (err) {
+    msgDiv.textContent = err.message || "Reset failed. The link may have expired.";
+    msgDiv.style.background = "rgba(239,68,68,0.1)";
+    msgDiv.style.border = "1px solid rgba(239,68,68,0.3)";
+    msgDiv.style.color = "var(--danger-color)";
+    msgDiv.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Reset Password";
   }
 }
 
@@ -7222,12 +7416,14 @@ async function _executeDirectorySearch() {
 }
 
 function _bizCardHTML(p, opts = {}) {
+  const name = p.display_name || p.company_name || (p.user || {}).name || (p.user || {}).email || 'Unknown User';
   const logoHTML = p.logo
-    ? `<img src="${p.logo}" alt="${_esc(p.company_name)}">`
-    : (p.company_name || '?').charAt(0).toUpperCase();
+    ? `<img src="${p.logo}" alt="${_esc(name)}">`
+    : (name || '?').charAt(0).toUpperCase();
   const locParts = p.hide_location ? [] : [p.city, p.state, p.country].filter(Boolean);
   const locationStr = locParts.length > 0 ? locParts.join(', ') : '';
   const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
+  const hasProfile = p.has_profile !== false && !!p.company_name;
 
   let actionsHTML = '';
   if (!opts.hideActions) {
@@ -7244,7 +7440,7 @@ function _bizCardHTML(p, opts = {}) {
     actionsHTML = `
       <div class="biz-card-actions">
         ${connectBtnHTML}
-        <button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>
+        ${hasProfile ? `<button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>` : ''}
       </div>`;
   }
   if (opts.connected) {
@@ -7252,19 +7448,23 @@ function _bizCardHTML(p, opts = {}) {
     const connId = p.connection_id || '';
     actionsHTML = `
       <div class="biz-card-actions">
-        <button onclick="_openChat('${uid}', '${_esc(p.company_name)}')">Message</button>
-        <button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>
+        <button onclick="_openChat('${uid}', '${_esc(name)}')">Message</button>
+        ${hasProfile ? `<button class="btn-outline" onclick="_viewProfile('${uid}')">View</button>` : ''}
         <button class="btn-outline btn-sm btn-danger" onclick="_disconnectFrom('${connId}')" style="flex:0;">✕</button>
       </div>`;
   }
+
+  const subtypeText = hasProfile
+    ? _esc(p.business_type || '')
+    : '<span style="font-style:italic;">Personal account</span>';
 
   return `
     <div class="biz-card">
       <div class="biz-card-header">
         <div class="biz-card-logo">${logoHTML}</div>
         <div>
-          <div class="biz-card-name">${_esc(p.company_name)}${p.verification_badge ? ' ' + _verificationBadgeHTML(16) : ''}</div>
-          <div class="biz-card-type">${_esc(p.business_type || '')}</div>
+          <div class="biz-card-name">${_esc(name)}${p.verification_badge ? ' ' + _verificationBadgeHTML(16) : ''}</div>
+          <div class="biz-card-type">${subtypeText}</div>
         </div>
       </div>
       ${p.description ? `<div class="biz-card-desc">${_esc(p.description)}</div>` : ''}
@@ -7295,6 +7495,37 @@ async function _disconnectFrom(connectionId) {
   } else {
     showToast(res.error || 'Failed', 'error');
   }
+}
+
+// ── Contact Links Helper ──
+
+const CONTACT_LINK_META = {
+  phone:     { icon: '📞', label: 'Phone',       href: v => `tel:${v}` },
+  email:     { icon: '✉️', label: 'Email',        href: v => `mailto:${v}` },
+  linkedin:  { icon: '💼', label: 'LinkedIn',     href: v => v },
+  instagram: { icon: '📸', label: 'Instagram',    href: v => v },
+  website:   { icon: '🌐', label: 'Website',      href: v => v },
+  twitter:   { icon: '🐦', label: 'Twitter / X',  href: v => v },
+  facebook:  { icon: '👥', label: 'Facebook',     href: v => v },
+  youtube:   { icon: '🎬', label: 'YouTube',      href: v => v }
+};
+
+function _contactLinksHTML(links) {
+  if (!links || typeof links !== 'object') return '';
+  const entries = Object.entries(links).filter(([, v]) => v && v.trim());
+  if (entries.length === 0) return '';
+
+  const rows = entries.map(([key, val]) => {
+    const meta = CONTACT_LINK_META[key] || { icon: '🔗', label: key, href: v => v };
+    const isUrl = val.startsWith('http://') || val.startsWith('https://');
+    const display = isUrl ? val.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : val;
+    const linkTag = (key === 'phone' || key === 'email' || isUrl)
+      ? `<a href="${_esc(meta.href(val))}" target="_blank" rel="noopener" class="cl-link">${_esc(display)}</a>`
+      : `<span class="cl-link">${_esc(val)}</span>`;
+    return `<div class="cl-row">${meta.icon}<span class="cl-label">${_esc(meta.label)}</span>${linkTag}</div>`;
+  }).join('');
+
+  return `<div class="contact-links-section">${rows}</div>`;
 }
 
 // ── View Profile Modal ──
@@ -7338,6 +7569,7 @@ async function _viewProfile(userId) {
       ${p.description ? `<p style="margin:0 0 14px;opacity:0.75;line-height:1.6;">${_esc(p.description)}</p>` : ''}
       ${tags ? `<div class="biz-card-tags" style="margin-bottom:14px;">${tags}</div>` : ''}
       ${locParts.length ? `<p style="margin:0 0 14px;opacity:0.55;font-size:0.9em;">📍 ${_esc(locParts.join(', '))}</p>` : ''}
+      ${_contactLinksHTML(p.contact_links)}
       <div id="modal-trust-score-${userId}" style="border-top:1px solid var(--border-color);padding-top:14px;margin-bottom:24px;">
         <div style="opacity:0.4;font-size:0.82em;">Loading trust score…</div>
       </div>
@@ -7462,16 +7694,17 @@ async function _renderMessages() {
       <h2>Messages</h2>
       <p style="opacity:0.55;margin-bottom:16px;">Select a connection to start a conversation.</p>
       ${connections.map(c => {
-        const name = c.company_name || 'Unknown';
+        const name = c.display_name || c.company_name || (c.user || {}).name || (c.user || {}).email || 'Unknown';
         const logo = c.logo
           ? `<img src="${c.logo}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">`
           : `<div style="width:40px;height:40px;border-radius:10px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent-color);font-size:0.9em;">${name.charAt(0).toUpperCase()}</div>`;
+        const subtext = c.company_name ? (c.business_type || '') : 'Personal account';
         return `
           <div class="request-card" style="cursor:pointer;" onclick="_openChat('${c.user_id}','${_esc(name)}')">
             ${logo}
             <div style="flex:1;">
               <div style="font-weight:600;">${_esc(name)}</div>
-              <div style="font-size:0.82em;opacity:0.55;">${_esc(c.business_type || '')}</div>
+              <div style="font-size:0.82em;opacity:0.55;">${_esc(subtext)}</div>
             </div>
             <span style="opacity:0.3;font-size:1.2em;">›</span>
           </div>`;
@@ -7484,7 +7717,10 @@ function _openChat(userId, name) {
   renderNetworkPage('messages');
 }
 
+let _chatAttachments = [];
+
 async function _renderChat(partnerId, partnerName) {
+  _chatAttachments = [];
   const content = document.getElementById('network-content');
   content.innerHTML = `
     <div class="card" style="padding:0;overflow:hidden;">
@@ -7494,7 +7730,10 @@ async function _renderChat(partnerId, partnerName) {
           <span>${_esc(partnerName)}</span>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
+        <div id="chat-attachment-preview" class="chat-attachment-preview" style="display:none;"></div>
         <div class="chat-input-bar">
+          <button class="chat-action-btn" onclick="_pickChatAttachment()" title="Attach file">📎</button>
+          <button class="chat-action-btn" onclick="_showFolderInvitePicker('${partnerId}')" title="Share folder">📁</button>
           <input type="text" id="chat-input" placeholder="Type a message…">
           <button onclick="_sendChatMsg('${partnerId}')">Send</button>
         </div>
@@ -7505,6 +7744,187 @@ async function _renderChat(partnerId, partnerName) {
     .addEventListener('keydown', e => { if (e.key === 'Enter') _sendChatMsg(partnerId); });
 
   await _loadChatMessages(partnerId);
+}
+
+function _pickChatAttachment() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.multiple = true;
+  inp.accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+
+  inp.onchange = () => {
+    const files = Array.from(inp.files || []);
+    inp.remove();
+    if (!files.length) return;
+
+    if (_chatAttachments.length + files.length > 5) {
+      showToast('Max 5 attachments per message', 'warning');
+      return;
+    }
+
+    let pending = files.length;
+    files.forEach(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast(`"${file.name}" is too large (max 5MB)`, 'warning');
+        pending--;
+        if (pending === 0) _renderAttachmentPreview();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => {
+        _chatAttachments.push({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: e.target.result
+        });
+        pending--;
+        if (pending === 0) _renderAttachmentPreview();
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+  inp.click();
+}
+
+function _renderAttachmentPreview() {
+  const container = document.getElementById('chat-attachment-preview');
+  if (!container) return;
+  if (_chatAttachments.length === 0) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  container.style.display = 'flex';
+  container.innerHTML = _chatAttachments.map((a, i) => {
+    const isImg = a.type.startsWith('image/');
+    const sizeStr = a.size < 1024 ? a.size + ' B' : a.size < 1048576 ? (a.size / 1024).toFixed(1) + ' KB' : (a.size / 1048576).toFixed(1) + ' MB';
+    return `<div class="chat-att-chip">
+      ${isImg ? `<img src="${a.data}" class="chat-att-thumb">` : `<span class="chat-att-icon">📄</span>`}
+      <span class="chat-att-name" title="${_esc(a.name)}">${_esc(a.name.length > 18 ? a.name.slice(0, 15) + '…' : a.name)}</span>
+      <span class="chat-att-size">${sizeStr}</span>
+      <span class="chat-att-remove" onclick="_removeChatAttachment(${i})">×</span>
+    </div>`;
+  }).join('');
+}
+
+function _removeChatAttachment(idx) {
+  _chatAttachments.splice(idx, 1);
+  _renderAttachmentPreview();
+}
+
+function _formatAttachmentHTML(att) {
+  const isImg = (att.type || '').startsWith('image/');
+  if (isImg && att.data) {
+    return `<div class="chat-att-inline"><img src="${att.data}" alt="${_esc(att.name)}" onclick="_openAttachmentFull(this.src)"></div>`;
+  }
+  const sizeStr = att.size < 1024 ? att.size + ' B' : att.size < 1048576 ? (att.size / 1024).toFixed(1) + ' KB' : (att.size / 1048576).toFixed(1) + ' MB';
+  return `<a class="chat-att-file" href="${att.data}" download="${_esc(att.name)}">
+    <span class="chat-att-file-icon">📄</span>
+    <span class="chat-att-file-info"><span class="chat-att-file-name">${_esc(att.name)}</span><span class="chat-att-file-size">${sizeStr}</span></span>
+  </a>`;
+}
+
+function _openAttachmentFull(src) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;cursor:pointer;">
+    <img src="${src}" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
+  </div>`;
+  modal.onclick = () => modal.remove();
+  document.body.appendChild(modal);
+}
+
+function _formatFolderInviteHTML(m) {
+  const meta = m.metadata || {};
+  const isSent = m.sender_id === currentUser.id;
+  const accepted = meta.status === 'accepted';
+  const roleBadge = meta.role === 'editor' ? 'Editor' : 'Viewer';
+
+  let actionHTML = '';
+  if (!isSent && !accepted) {
+    actionHTML = `<button class="chat-invite-accept" onclick="_acceptFolderInvite('${m.id}')">Accept Invite</button>`;
+  } else if (accepted) {
+    actionHTML = `<span class="chat-invite-accepted">✓ Accepted</span>`;
+  }
+
+  return `<div class="chat-folder-invite">
+    <div class="chat-invite-header">📁 Folder Invite</div>
+    <div class="chat-invite-name">${_esc(meta.folder_name || 'Unknown Folder')}</div>
+    <div class="chat-invite-role">Role: <strong>${_esc(roleBadge)}</strong></div>
+    ${actionHTML}
+  </div>`;
+}
+
+async function _acceptFolderInvite(messageId) {
+  const res = await window.dashboardAPI.acceptFolderInvite(messageId);
+  if (res.success) {
+    showToast('Folder invite accepted! Check your shared folders.', 'success');
+    if (networkChatPartner) await _loadChatMessages(networkChatPartner.userId);
+  } else {
+    showToast(res.error || 'Failed to accept invite', 'error');
+  }
+}
+
+async function _showFolderInvitePicker(partnerId) {
+  const foldersRes = await window.dashboardAPI.getMyFolders();
+  const folders = foldersRes.folders || [];
+
+  if (folders.length === 0) {
+    showToast('You have no order folders to share.', 'info');
+    return;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:440px;">
+      <h3 style="margin:0 0 16px;">Share a Folder</h3>
+      <p style="opacity:0.55;font-size:0.88em;margin:0 0 16px;">Select a folder to share with this connection.</p>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:0.88em;font-weight:600;display:block;margin-bottom:4px;">Folder</label>
+        <select id="invite-folder-select" style="width:100%;">
+          ${folders.map(f => `<option value="${f.id}">${_esc(f.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="font-size:0.88em;font-weight:600;display:block;margin-bottom:4px;">Role</label>
+        <select id="invite-role-select" style="width:100%;">
+          <option value="viewer">Viewer</option>
+          <option value="editor">Editor</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button onclick="_sendFolderInvite('${partnerId}');this.closest('.modal').remove();">Send Invite</button>
+        <button style="background:var(--border-color);color:var(--text-color);" onclick="this.closest('.modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+async function _sendFolderInvite(partnerId) {
+  const folderSelect = document.getElementById('invite-folder-select');
+  const roleSelect = document.getElementById('invite-role-select');
+  if (!folderSelect) return;
+
+  const folderId = folderSelect.value;
+  const folderName = folderSelect.options[folderSelect.selectedIndex].text;
+  const role = roleSelect?.value || 'viewer';
+
+  const res = await window.dashboardAPI.sendNetworkMessage(partnerId, '', {
+    msg_type: 'folder_invite',
+    metadata: { folder_id: folderId, folder_name: folderName, role, status: 'pending' }
+  });
+
+  if (res.success) {
+    showToast('Folder invite sent!', 'success');
+    await _loadChatMessages(partnerId);
+  } else {
+    showToast(res.error || 'Failed to send invite', 'error');
+  }
 }
 
 async function _loadChatMessages(partnerId) {
@@ -7522,11 +7942,25 @@ async function _loadChatMessages(partnerId) {
   container.innerHTML = msgs.map(m => {
     const isSent = m.sender_id === currentUser.id;
     const time = new Date(m.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    return `
-      <div class="chat-bubble ${isSent ? 'sent' : 'received'}">
-        ${_esc(m.body)}
+
+    if (m.msg_type === 'folder_invite') {
+      return `<div class="chat-bubble ${isSent ? 'sent' : 'received'}">
+        ${_formatFolderInviteHTML(m)}
         <span class="chat-time">${time}</span>
       </div>`;
+    }
+
+    const bodyHTML = m.body ? _esc(m.body) : '';
+    const atts = (m.attachments || []);
+    const attsHTML = atts.length > 0
+      ? `<div class="chat-att-list">${atts.map(a => _formatAttachmentHTML(a)).join('')}</div>`
+      : '';
+
+    return `<div class="chat-bubble ${isSent ? 'sent' : 'received'}">
+      ${bodyHTML}
+      ${attsHTML}
+      <span class="chat-time">${time}</span>
+    </div>`;
   }).join('');
 
   container.scrollTop = container.scrollHeight;
@@ -7536,10 +7970,22 @@ async function _sendChatMsg(partnerId) {
   const input = document.getElementById('chat-input');
   if (!input) return;
   const body = input.value.trim();
-  if (!body) return;
+  const hasAttachments = _chatAttachments.length > 0;
+
+  if (!body && !hasAttachments) return;
+
+  const opts = {};
+  if (hasAttachments) {
+    opts.attachments = _chatAttachments.map(a => ({
+      name: a.name, type: a.type, size: a.size, data: a.data
+    }));
+  }
 
   input.value = '';
-  const res = await window.dashboardAPI.sendNetworkMessage(partnerId, body);
+  _chatAttachments = [];
+  _renderAttachmentPreview();
+
+  const res = await window.dashboardAPI.sendNetworkMessage(partnerId, body, opts);
   if (res.success) {
     await _loadChatMessages(partnerId);
   } else {
@@ -7611,6 +8057,42 @@ async function _renderMyProfile() {
             <input type="checkbox" id="bp-hide-location" ${p.hide_location ? 'checked' : ''}>
             <span class="toggle-label">Hide location</span>
           </div>
+        </div>
+        <div class="form-group full-width" style="border-top:1px solid var(--border-color);padding-top:20px;margin-top:4px;">
+          <h3 style="margin:0 0 14px;">Contact Links</h3>
+          <p style="margin:0 0 10px;font-size:0.85em;opacity:0.55;">These are only visible when someone clicks "View" on your business profile.</p>
+        </div>
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" id="bp-cl-phone" value="${_esc((p.contact_links||{}).phone||'')}" placeholder="+1 (555) 123-4567" maxlength="30">
+        </div>
+        <div class="form-group">
+          <label>Business Email</label>
+          <input type="email" id="bp-cl-email" value="${_esc((p.contact_links||{}).email||'')}" placeholder="contact@company.com" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label>LinkedIn</label>
+          <input type="url" id="bp-cl-linkedin" value="${_esc((p.contact_links||{}).linkedin||'')}" placeholder="https://linkedin.com/in/yourprofile" maxlength="300">
+        </div>
+        <div class="form-group">
+          <label>Instagram</label>
+          <input type="url" id="bp-cl-instagram" value="${_esc((p.contact_links||{}).instagram||'')}" placeholder="https://instagram.com/yourhandle" maxlength="300">
+        </div>
+        <div class="form-group">
+          <label>Website</label>
+          <input type="url" id="bp-cl-website" value="${_esc((p.contact_links||{}).website||'')}" placeholder="https://yourcompany.com" maxlength="300">
+        </div>
+        <div class="form-group">
+          <label>Twitter / X</label>
+          <input type="url" id="bp-cl-twitter" value="${_esc((p.contact_links||{}).twitter||'')}" placeholder="https://x.com/yourhandle" maxlength="300">
+        </div>
+        <div class="form-group">
+          <label>Facebook</label>
+          <input type="url" id="bp-cl-facebook" value="${_esc((p.contact_links||{}).facebook||'')}" placeholder="https://facebook.com/yourpage" maxlength="300">
+        </div>
+        <div class="form-group">
+          <label>YouTube</label>
+          <input type="url" id="bp-cl-youtube" value="${_esc((p.contact_links||{}).youtube||'')}" placeholder="https://youtube.com/@yourchannel" maxlength="300">
         </div>
         <div class="form-group full-width" style="border-top:1px solid var(--border-color);padding-top:20px;margin-top:4px;">
           <h3 style="margin:0 0 14px;">Privacy</h3>
@@ -7731,6 +8213,13 @@ async function _saveBusinessProfile() {
   const company = document.getElementById('bp-company')?.value.trim();
   if (!company) { showToast('Company name is required', 'warning'); return; }
 
+  const contactLinks = {};
+  const clFields = ['phone','email','linkedin','instagram','website','twitter','facebook','youtube'];
+  clFields.forEach(f => {
+    const v = document.getElementById(`bp-cl-${f}`)?.value.trim() || '';
+    if (v) contactLinks[f] = v;
+  });
+
   const profile = {
     company_name: company,
     logo: _networkLogoData || networkProfileCache?.logo || null,
@@ -7742,7 +8231,8 @@ async function _saveBusinessProfile() {
     country: document.getElementById('bp-country')?.value.trim() || '',
     visibility: document.getElementById('bp-visibility')?.value || 'public',
     allow_requests: document.getElementById('bp-allow-requests')?.value || 'everyone',
-    hide_location: document.getElementById('bp-hide-location')?.checked || false
+    hide_location: document.getElementById('bp-hide-location')?.checked || false,
+    contact_links: contactLinks
   };
 
   const res = await window.dashboardAPI.saveBusinessProfile(profile);

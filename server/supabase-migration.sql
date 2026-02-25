@@ -130,6 +130,7 @@ CREATE TABLE business_profiles (
   visibility TEXT NOT NULL DEFAULT 'public',
   allow_requests TEXT NOT NULL DEFAULT 'everyone',
   hide_location BOOLEAN NOT NULL DEFAULT FALSE,
+  contact_links JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id)
@@ -162,8 +163,11 @@ CREATE TABLE messages (
   id TEXT PRIMARY KEY,
   sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   receiver_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  body TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
   read BOOLEAN NOT NULL DEFAULT FALSE,
+  attachments JSONB NOT NULL DEFAULT '[]',
+  msg_type TEXT NOT NULL DEFAULT 'text',
+  metadata JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

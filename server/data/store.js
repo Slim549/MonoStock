@@ -389,23 +389,38 @@ async function upsertBusinessProfile(userId, profile) {
     visibility: profile.visibility || 'public',
     allow_requests: profile.allow_requests || 'everyone',
     hide_location: !!profile.hide_location,
+    contact_links: profile.contact_links || {},
     updated_at: now
   };
 
-  if (existing) {
-    const { error } = await supabase
-      .from('business_profiles')
-      .update(fields)
-      .eq('id', existing.id);
-    if (error) throw error;
-    return { id: existing.id, ...fields };
-  } else {
-    const row = { id: uuidv4(), ...fields, created_at: now };
-    const { error } = await supabase
-      .from('business_profiles')
-      .insert(row);
-    if (error) throw error;
-    return row;
+  async function _doUpsert(data) {
+    if (existing) {
+      const { error } = await supabase
+        .from('business_profiles')
+        .update(data)
+        .eq('id', existing.id);
+      if (error) throw error;
+      return { id: existing.id, ...data };
+    } else {
+      const row = { id: uuidv4(), ...data, created_at: now };
+      const { error } = await supabase
+        .from('business_profiles')
+        .insert(row);
+      if (error) throw error;
+      return row;
+    }
+  }
+
+  try {
+    return await _doUpsert(fields);
+  } catch (err) {
+    const msg = (err.message || err.details || '').toLowerCase();
+    if (msg.includes('contact_links')) {
+      console.warn('[store] contact_links column missing — run supabase-migration-contact-links.sql. Saving without it.');
+      delete fields.contact_links;
+      return await _doUpsert(fields);
+    }
+    throw err;
   }
 }
 
@@ -436,10 +451,19 @@ async function searchBusinessProfiles({ keyword, industry, industry_custom, busi
 
   if (profiles.length > 0) {
     const uids = profiles.map(p => p.user_id);
-    const { data: udata } = await supabase.from('users').select('id, verification_badge').in('id', uids);
+    const [{ data: udata }, { data: scores }] = await Promise.all([
+      supabase.from('users').select('id, verification_badge').in('id', uids),
+      supabase.from('trust_scores').select('user_id, total').in('user_id', uids)
+    ]);
     const badgeMap = {};
     (udata || []).forEach(u => { badgeMap[u.id] = !!u.verification_badge; });
-    profiles.forEach(p => { p.verification_badge = badgeMap[p.user_id] || false; });
+    const scoreMap = {};
+    (scores || []).forEach(s => { scoreMap[s.user_id] = s.total || 0; });
+    profiles.forEach(p => {
+      p.verification_badge = badgeMap[p.user_id] || false;
+      p.trust_score = scoreMap[p.user_id] || 0;
+    });
+    profiles.sort((a, b) => b.trust_score - a.trust_score);
   }
 
   return profiles;
@@ -593,28 +617,55 @@ async function getConnectedProfiles(userId) {
   if (!data || data.length === 0) return [];
 
   const otherIds = data.map(c => c.requester_id === userId ? c.receiver_id : c.requester_id);
-  const { data: profiles } = await supabase
-    .from('business_profiles')
-    .select('*')
-    .in('user_id', otherIds);
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name, email, verification_badge')
-    .in('id', otherIds);
+  const [{ data: profiles }, { data: users }] = await Promise.all([
+    supabase.from('business_profiles').select('*').in('user_id', otherIds),
+    supabase.from('users').select('id, name, email, verification_badge').in('id', otherIds)
+  ]);
 
+  const { data: recentMsgs } = await supabase
+    .from('messages')
+    .select('sender_id, receiver_id, created_at')
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+  const lastMsgMap = {};
+  (recentMsgs || []).forEach(m => {
+    const partner = m.sender_id === userId ? m.receiver_id : m.sender_id;
+    if (!lastMsgMap[partner]) lastMsgMap[partner] = m.created_at;
+  });
+
+  const profileMap = {};
+  (profiles || []).forEach(p => {
+    if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
+    profileMap[p.user_id] = p;
+  });
   const userMap = {};
   (users || []).forEach(u => { userMap[u.id] = u; });
 
-  return (profiles || []).map(p => {
-    if (p.hide_location) { p.city = ''; p.state = ''; p.country = ''; }
-    const u = userMap[p.user_id] || {};
+  const results = otherIds.map(uid => {
+    const p = profileMap[uid] || {};
+    const u = userMap[uid] || {};
+    const conn = data.find(c => c.requester_id === uid || c.receiver_id === uid);
     return {
       ...p,
+      user_id: uid,
       user: u,
+      company_name: p.company_name || '',
+      display_name: p.company_name || u.name || u.email || 'Unknown User',
+      has_profile: !!p.id,
       verification_badge: !!u.verification_badge,
-      connection_id: data.find(c => c.requester_id === p.user_id || c.receiver_id === p.user_id)?.id
+      connection_id: conn?.id,
+      last_message_at: lastMsgMap[uid] || null
     };
   });
+
+  results.sort((a, b) => {
+    if (a.last_message_at && b.last_message_at) return new Date(b.last_message_at) - new Date(a.last_message_at);
+    if (a.last_message_at) return -1;
+    if (b.last_message_at) return 1;
+    return a.display_name.localeCompare(b.display_name);
+  });
+
+  return results;
 }
 
 async function getConnectionStatus(userId, targetId) {
@@ -629,7 +680,7 @@ async function getConnectionStatus(userId, targetId) {
 
 // ── Message helpers ──
 
-async function sendMessage(senderId, receiverId, body) {
+async function sendMessage(senderId, receiverId, body, opts = {}) {
   const connStatus = await getConnectionStatus(senderId, receiverId);
   if (connStatus.status !== 'connected') {
     return { success: false, error: 'You must be connected to send messages' };
@@ -638,13 +689,60 @@ async function sendMessage(senderId, receiverId, body) {
     id: uuidv4(),
     sender_id: senderId,
     receiver_id: receiverId,
-    body: body.trim(),
+    body: (body || '').trim(),
     read: false,
     created_at: new Date().toISOString()
   };
-  const { error } = await supabase.from('messages').insert(row);
-  if (error) throw error;
+  if (opts.attachments && opts.attachments.length > 0) row.attachments = opts.attachments;
+  if (opts.msg_type) row.msg_type = opts.msg_type;
+  if (opts.metadata) row.metadata = opts.metadata;
+
+  async function _insert(data) {
+    const { error } = await supabase.from('messages').insert(data);
+    return error;
+  }
+
+  let err = await _insert(row);
+  if (err && (err.message || '').includes('attachments')) {
+    delete row.attachments;
+    delete row.msg_type;
+    delete row.metadata;
+    err = await _insert(row);
+  }
+  if (err) throw err;
   return { success: true, message: row };
+}
+
+async function acceptFolderInvite(messageId, userId) {
+  const { data: msg, error: fetchErr } = await supabase
+    .from('messages').select('*').eq('id', messageId).single();
+  if (fetchErr) throw fetchErr;
+  if (!msg) return { success: false, error: 'Message not found' };
+  if (msg.receiver_id !== userId) return { success: false, error: 'Not authorized' };
+  if (msg.msg_type !== 'folder_invite') return { success: false, error: 'Not a folder invite' };
+
+  const meta = msg.metadata || {};
+  if (meta.status === 'accepted') return { success: false, error: 'Already accepted' };
+
+  const folderId = meta.folder_id;
+  const role = meta.role || 'viewer';
+
+  try {
+    await addCollaborator(folderId, userId, role, msg.sender_id);
+  } catch (e) {
+    if ((e.message || '').includes('duplicate') || (e.code === '23505')) {
+      // already a collaborator
+    } else {
+      throw e;
+    }
+  }
+
+  await supabase
+    .from('messages')
+    .update({ metadata: { ...meta, status: 'accepted' } })
+    .eq('id', messageId);
+
+  return { success: true };
 }
 
 async function getConversation(userId, partnerId, limit = 50) {
@@ -714,6 +812,7 @@ module.exports = {
   getConnectedProfiles,
   getConnectionStatus,
   sendMessage,
+  acceptFolderInvite,
   getConversation,
   getUnreadMessageCount
 };

@@ -1506,6 +1506,37 @@
       font-size: 0.85em;
       opacity: 0.55;
     }
+
+    /* Contact links in View Profile modal */
+    .contact-links-section {
+      border-top: 1px solid var(--border-color);
+      padding-top: 14px;
+      margin-bottom: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .cl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9em;
+      line-height: 1.4;
+    }
+    .cl-label {
+      font-weight: 600;
+      min-width: 80px;
+      opacity: 0.6;
+      font-size: 0.85em;
+    }
+    .cl-link {
+      color: var(--accent-color);
+      text-decoration: none;
+      word-break: break-all;
+    }
+    a.cl-link:hover {
+      text-decoration: underline;
+    }
     .biz-card-actions {
       display: flex;
       gap: 8px;
@@ -1783,6 +1814,7 @@
       gap: 8px;
       padding: 12px 16px;
       border-top: 1px solid var(--border-color);
+      align-items: center;
     }
     .chat-input-bar input {
       flex: 1;
@@ -1792,6 +1824,139 @@
     .chat-input-bar button {
       padding: 10px 20px;
       white-space: nowrap;
+    }
+    .chat-action-btn {
+      background: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 6px 4px !important;
+      font-size: 1.2em;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.15s;
+      min-width: auto !important;
+      flex: 0 0 auto !important;
+    }
+    .chat-action-btn:hover {
+      opacity: 1;
+      background: none !important;
+    }
+
+    /* Attachment preview bar */
+    .chat-attachment-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-color);
+    }
+    .chat-att-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--border-color);
+      border-radius: 8px;
+      font-size: 0.8em;
+      max-width: 220px;
+    }
+    .chat-att-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 4px;
+      object-fit: cover;
+    }
+    .chat-att-icon { font-size: 1.1em; }
+    .chat-att-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100px;
+    }
+    .chat-att-size { opacity: 0.5; font-size: 0.9em; }
+    .chat-att-remove {
+      cursor: pointer;
+      opacity: 0.5;
+      font-weight: 700;
+      font-size: 1.1em;
+      padding: 0 2px;
+    }
+    .chat-att-remove:hover { opacity: 1; color: var(--danger-color); }
+
+    /* Inline attachments in chat bubbles */
+    .chat-att-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+    .chat-att-inline img {
+      max-width: 240px;
+      max-height: 200px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .chat-att-inline img:hover { opacity: 0.85; }
+    .chat-att-file {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 8px;
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s;
+    }
+    .chat-bubble.sent .chat-att-file { background: rgba(255,255,255,0.15); }
+    .chat-att-file:hover { background: rgba(255,255,255,0.25); }
+    .chat-att-file-icon { font-size: 1.3em; }
+    .chat-att-file-info { display: flex; flex-direction: column; gap: 1px; }
+    .chat-att-file-name { font-weight: 600; font-size: 0.88em; }
+    .chat-att-file-size { font-size: 0.75em; opacity: 0.6; }
+
+    /* Folder invite card in chat */
+    .chat-folder-invite {
+      background: rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 12px 14px;
+      min-width: 180px;
+    }
+    .chat-bubble.received .chat-folder-invite {
+      background: rgba(0,0,0,0.06);
+    }
+    [data-theme="dark"] .chat-bubble.received .chat-folder-invite {
+      background: rgba(255,255,255,0.08);
+    }
+    .chat-invite-header {
+      font-weight: 700;
+      font-size: 0.85em;
+      margin-bottom: 6px;
+      opacity: 0.7;
+    }
+    .chat-invite-name {
+      font-weight: 700;
+      font-size: 1em;
+      margin-bottom: 4px;
+    }
+    .chat-invite-role {
+      font-size: 0.82em;
+      opacity: 0.7;
+      margin-bottom: 10px;
+    }
+    .chat-invite-accept {
+      background: var(--success-color) !important;
+      color: #fff !important;
+      padding: 6px 16px !important;
+      font-size: 0.82em !important;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+    }
+    .chat-invite-accept:hover { filter: brightness(1.1); }
+    .chat-invite-accepted {
+      display: inline-block;
+      font-size: 0.82em;
+      color: var(--success-color);
+      font-weight: 600;
     }
 
     @media (max-width: 768px) {

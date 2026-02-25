@@ -229,6 +229,19 @@ async function getDomainToken(userId) {
   return data.token;
 }
 
+async function resetPasswordWithToken(token, newPassword) {
+  const record = await consumeVerificationToken(token, 'password_reset');
+  if (!record) return { error: 'Invalid or expired reset link' };
+
+  const newHash = await bcrypt.hash(newPassword, 12);
+  const { error } = await supabase
+    .from('users')
+    .update({ password_hash: newHash, updated_at: Date.now() })
+    .eq('id', record.user_id);
+  if (error) throw error;
+  return { success: true };
+}
+
 module.exports = {
   findByEmail,
   findById,
@@ -244,5 +257,6 @@ module.exports = {
   setDomain,
   setDomainVerified,
   getRawUser,
-  getDomainToken
+  getDomainToken,
+  resetPasswordWithToken
 };

@@ -72,6 +72,9 @@ router.post('/profile', requireAuth, async (req, res) => {
     if (p.logo && p.logo.length > 500000) {
       return res.status(400).json({ success: false, error: 'Logo too large' });
     }
+    if (p.contact_links && typeof p.contact_links !== 'object') {
+      return res.status(400).json({ success: false, error: 'Contact links must be an object' });
+    }
 
     const profile = await store.upsertBusinessProfile(req.user.id, p);
     trustScore.recalculate(req.user.id).catch(() => {});
@@ -190,18 +193,70 @@ router.get('/requests', requireAuth, async (req, res) => {
 
 router.post('/messages/:userId', requireAuth, async (req, res) => {
   try {
-    const { body } = req.body;
-    if (!body || !body.trim()) {
-      return res.status(400).json({ success: false, error: 'Message body required' });
+    const { body, attachments, msg_type, metadata } = req.body;
+
+    const hasText = body && body.trim();
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+    const isInvite = msg_type === 'folder_invite';
+
+    if (!hasText && !hasAttachments && !isInvite) {
+      return res.status(400).json({ success: false, error: 'Message body or attachment required' });
     }
-    if (body.length > 5000) {
+    if (hasText && body.length > 5000) {
       return res.status(400).json({ success: false, error: 'Message too long' });
     }
-    const result = await store.sendMessage(req.user.id, req.params.userId, body);
+    if (hasAttachments) {
+      if (attachments.length > 5) {
+        return res.status(400).json({ success: false, error: 'Max 5 attachments per message' });
+      }
+      const totalSize = attachments.reduce((s, a) => s + (a.data || '').length, 0);
+      if (totalSize > 8 * 1024 * 1024) {
+        return res.status(400).json({ success: false, error: 'Attachments too large (max ~6MB total)' });
+      }
+    }
+    if (isInvite && (!metadata || !metadata.folder_id)) {
+      return res.status(400).json({ success: false, error: 'Folder invite requires folder_id' });
+    }
+
+    const opts = {};
+    if (hasAttachments) opts.attachments = attachments;
+    if (msg_type) opts.msg_type = msg_type;
+    if (metadata) opts.metadata = metadata;
+
+    const result = await store.sendMessage(req.user.id, req.params.userId, body || '', opts);
     res.json(result);
   } catch (err) {
     console.error('[network] send message error:', err);
     res.status(500).json({ success: false, error: 'Failed to send message' });
+  }
+});
+
+router.post('/messages/:messageId/accept-invite', requireAuth, async (req, res) => {
+  try {
+    const result = await store.acceptFolderInvite(req.params.messageId, req.user.id);
+    res.json(result);
+  } catch (err) {
+    console.error('[network] accept invite error:', err);
+    res.status(500).json({ success: false, error: 'Failed to accept invite' });
+  }
+});
+
+router.get('/my-folders', requireAuth, async (req, res) => {
+  try {
+    const supabase = require('../data/supabase');
+    const { data, error } = await supabase
+      .from('order_folders')
+      .select('id, data')
+      .eq('user_id', req.user.id);
+    if (error) throw error;
+    const folders = (data || []).map(f => {
+      const d = typeof f.data === 'string' ? JSON.parse(f.data) : (f.data || {});
+      return { id: f.id, name: d.name || 'Unnamed Folder' };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ success: true, folders });
+  } catch (err) {
+    console.error('[network] my-folders error:', err);
+    res.json({ success: true, folders: [] });
   }
 });
 
