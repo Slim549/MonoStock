@@ -73,11 +73,6 @@ async function save(data, userId) {
 }
 
 async function replaceTable(table, items, userId) {
-  if (userId) {
-    await supabase.from(table).delete().eq('user_id', userId);
-  } else {
-    await supabase.from(table).delete().neq('id', '');
-  }
   if (items.length > 0) {
     const rows = items.map(item => {
       const id = item.id != null ? String(item.id) : uuidv4();
@@ -85,8 +80,20 @@ async function replaceTable(table, items, userId) {
       if (userId) row.user_id = userId;
       return row;
     });
-    const { error } = await supabase.from(table).insert(rows);
+    const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
     if (error) throw error;
+
+    const keepIds = rows.map(r => r.id);
+    const deleteQuery = supabase.from(table).delete();
+    if (userId) deleteQuery.eq('user_id', userId);
+    const { error: delError } = await deleteQuery.not('id', 'in', `(${keepIds.join(',')})`);
+    if (delError) throw delError;
+  } else {
+    if (userId) {
+      await supabase.from(table).delete().eq('user_id', userId);
+    } else {
+      await supabase.from(table).delete().neq('id', '');
+    }
   }
 }
 

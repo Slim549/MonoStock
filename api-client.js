@@ -107,6 +107,51 @@
   }
 
   // ── Excel import (upload file to server) ──
+
+  async function importInventoryExcel() {
+    return new Promise(resolve => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.xlsx,.xls';
+      inp.style.display = 'none';
+      document.body.appendChild(inp);
+
+      const cancelTimer = setTimeout(() => {
+        inp.remove();
+        resolve({ success: false, canceled: true });
+      }, 5 * 60 * 1000);
+
+      inp.onchange = async () => {
+        clearTimeout(cancelTimer);
+        const file = inp.files[0];
+        inp.remove();
+        if (!file) { resolve({ success: false, canceled: true }); return; }
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const token = _getToken();
+          const headers = {};
+          if (token) headers['Authorization'] = 'Bearer ' + token;
+
+          const res = await fetch(API_BASE + '/api/imports/inventory', {
+            method: 'POST',
+            headers,
+            body: formData
+          });
+          const result = await res.json();
+          resolve(result);
+        } catch (e) {
+          console.error('[api-client] inventory import failed:', e);
+          resolve({ success: false, error: e.message });
+        }
+      };
+
+      inp.click();
+    });
+  }
+
   async function importOrdersExcel() {
     return new Promise(resolve => {
       const inp = document.createElement('input');
@@ -632,6 +677,7 @@
 
     // Excel import
     importOrdersExcel,
+    importInventoryExcel,
 
     // Company logo
     pickCompanyLogo,

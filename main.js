@@ -997,3 +997,104 @@ ipcMain.handle("import-orders-excel", async () => {
     return { success: false, error: err.message };
   }
 });
+
+// ── Import Inventory from Excel ──
+ipcMain.handle("import-inventory-excel", async () => {
+  try {
+    const result = await dialog.showOpenDialog({
+      title: "Select Excel File to Import Inventory",
+      filters: [
+        { name: "Excel Files", extensions: ["xlsx", "xls"] },
+        { name: "All Files", extensions: ["*"] }
+      ],
+      properties: ["openFile"]
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { success: false, canceled: true };
+    }
+
+    const filePath = result.filePaths[0];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return { success: false, error: "No worksheet found in file." };
+    }
+
+    const headers = [];
+    const firstRow = worksheet.getRow(1);
+    firstRow.eachCell((cell, colNumber) => {
+      headers[colNumber] = (cell.value || "").toString().trim().toLowerCase();
+    });
+
+    const headerMap = {};
+    let hasRecognizedHeaders = false;
+
+    headers.forEach((h, i) => {
+      if (!h) return;
+      if (/^(material|name|item|product|description|part)s?$/.test(h)
+          || h === "material name" || h === "product name" || h === "item name" || h === "part name") {
+        headerMap.material = i;
+        hasRecognizedHeaders = true;
+      } else if (/^(in\s*stock|stock|on\s*hand|qty|quantity|count|available)$/.test(h)) {
+        headerMap.inStock = i;
+        hasRecognizedHeaders = true;
+      } else if (/^(required|needed|demand|order\s*qty|target)$/.test(h)) {
+        headerMap.required = i;
+        hasRecognizedHeaders = true;
+      } else if (/^(delta|diff|difference|shortage|variance)$/.test(h)) {
+        headerMap.delta = i;
+        hasRecognizedHeaders = true;
+      }
+    });
+
+    const items = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1 && hasRecognizedHeaders) return;
+
+      const getVal = (field) => {
+        const colIdx = headerMap[field];
+        if (!colIdx) return "";
+        const val = row.getCell(colIdx).value;
+        if (val === null || val === undefined) return "";
+        if (typeof val === "object" && val.text) return val.text;
+        if (typeof val === "object" && val.result !== undefined) return String(val.result);
+        return String(val).trim();
+      };
+
+      let material;
+      if (headerMap.material) {
+        material = getVal("material");
+      } else {
+        const firstCell = row.getCell(1).value;
+        material = firstCell != null ? String(firstCell).trim() : "";
+      }
+
+      if (!material) return;
+
+      const parseNum = (raw) => {
+        if (raw === "" || raw === null || raw === undefined) return 0;
+        const cleaned = String(raw).replace(/[(),$]/g, "").trim();
+        return parseInt(cleaned, 10) || 0;
+      };
+
+      items.push({
+        id: require("crypto").randomUUID(),
+        material,
+        inStock: parseNum(getVal("inStock")),
+        required: parseNum(getVal("required"))
+      });
+    });
+
+    if (!items.length) {
+      return { success: false, error: "No materials found in file. Place material names in the first column, or use a header row (Material, In Stock, Required)." };
+    }
+
+    return { success: true, items, fileName: path.basename(filePath) };
+  } catch (err) {
+    console.error("INVENTORY IMPORT FAILED:", err);
+    return { success: false, error: err.message };
+  }
+});

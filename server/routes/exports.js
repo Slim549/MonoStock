@@ -93,7 +93,10 @@ router.post('/inventory', async (req, res) => {
     headerRow.font = { bold: true };
 
     (rows || []).forEach(r => {
-      ws.addRow([r.material, r.inStock, r.required, r.deltaDisplay]);
+      const inStock = Number(r.inStock) || 0;
+      const required = Number(r.required) || 0;
+      const delta = required - inStock;
+      ws.addRow([r.material || '', inStock, required, delta]);
     });
 
     ws.views = [{ state: 'frozen', ySplit: 1 }];

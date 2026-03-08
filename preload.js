@@ -18,7 +18,8 @@ contextBridge.exposeInMainWorld('dashboardAPI', {
   generateInvoice:     (data) => ipcRenderer.invoke('generate-invoice', data),
 
   // ── Excel import ──
-  importOrdersExcel:   () => ipcRenderer.invoke('import-orders-excel'),
+  importOrdersExcel:      () => ipcRenderer.invoke('import-orders-excel'),
+  importInventoryExcel:   () => ipcRenderer.invoke('import-inventory-excel'),
 
   // ── Company logo ──
   pickCompanyLogo:     () => ipcRenderer.invoke('pick-company-logo'),

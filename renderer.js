@@ -225,8 +225,22 @@ function loadAndRenderDashboard() {
   });
 }
 
-// Save dashboard
+// Save dashboard (debounced to prevent rapid-fire saves from race-conditioning the DB)
+let _saveDashboardTimer = null;
+let _saveDashboardInFlight = false;
+let _saveDashboardQueued = false;
+
 function saveDashboard() {
+  clearTimeout(_saveDashboardTimer);
+  _saveDashboardTimer = setTimeout(_flushSaveDashboard, 800);
+}
+
+function _flushSaveDashboard() {
+  if (_saveDashboardInFlight) {
+    _saveDashboardQueued = true;
+    return;
+  }
+  _saveDashboardInFlight = true;
   window.dashboardAPI.save(dashboardData)
     .then(result => {
       if (result && !result.success) {
@@ -238,6 +252,13 @@ function saveDashboard() {
     .catch(err => {
       console.error("Failed to save dashboard:", err);
       showToast(err?.message || "Error saving data. Check console.", "error");
+    })
+    .finally(() => {
+      _saveDashboardInFlight = false;
+      if (_saveDashboardQueued) {
+        _saveDashboardQueued = false;
+        _flushSaveDashboard();
+      }
     });
 }
 
@@ -1453,7 +1474,7 @@ function renderProductsList() {
     return;
   }
 
-  let html = `<table style="width:100%; border-collapse: separate; border-spacing: 0; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm);">
+  let html = `<table style="width:100%; border-collapse: separate; border-spacing: 0; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm);">
     <thead>
       <tr>
         <th style="text-align:left;">Product Name</th>
@@ -3939,7 +3960,7 @@ function renderCustomerProfitability() {
     const profit = c.revenue - c.cost;
     const margin = c.revenue > 0 ? ((profit / c.revenue) * 100).toFixed(1) + "%" : "0.0%";
     const profitColor = profit >= 0 ? "var(--success-color)" : "var(--danger-color)";
-    const rankBadge = i < 3 ? `<span style="display:inline-block; background:linear-gradient(135deg, #f59e0b 0%, #f97316 100%); color:white; padding:4px 10px; border-radius:20px; font-size:0.85em;">★</span>` : '';
+    const rankBadge = i < 3 ? `<span style="display:inline-block; background:#f59e0b; color:white; padding:4px 10px; border-radius:20px; font-size:0.85em;">★</span>` : '';
 
     html += `<tr>
       <td style="text-align:center; font-weight:bold;">${i + 1} ${rankBadge}</td>
@@ -5242,11 +5263,11 @@ function openBudget(index) {
         <button id="add-line-item" style="margin-top: 15px; background: var(--success-color);">${t("btnAddLineItem")}</button>
       </div>
 
-      <div id="budget-breakdown" style="margin-top: 30px; padding: 20px; background: var(--row-even-bg); border-radius: 12px; border-left: 4px solid var(--accent-color);"></div>
+      <div id="budget-breakdown" style="margin-top: 30px; padding: 20px; background: var(--row-even-bg); border-radius: 10px; border-left: 3px solid var(--accent-color);"></div>
 
-      <div style="margin-top: 25px; padding: 20px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 12px; text-align: right;">
+      <div style="margin-top: 25px; padding: 20px; background: rgba(79, 70, 229, 0.06); border-radius: 10px; text-align: right;">
         <div style="font-size: 1.8em; font-weight: 700; color: var(--text-color);">
-          ${t("totalLabel")} <span style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${cur}<span id="grand-total">0.00</span></span>
+          ${t("totalLabel")} <span style="color: #4f46e5;">${cur}<span id="grand-total">0.00</span></span>
         </div>
         <div id="profit-display" style="font-size: 0.95em; margin-top: 10px; font-weight: 500;"></div>
       </div>
@@ -6186,7 +6207,7 @@ function showInvoiceLoadingOverlay(show) {
       el = document.createElement("div");
       el.id = "invoice-loading-overlay";
       el.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:30000;";
-      el.innerHTML = `<div style="background:var(--card-bg); padding:32px 48px; border-radius:16px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      el.innerHTML = `<div style="background:var(--card-bg); padding:32px 48px; border-radius:12px; text-align:center; box-shadow:0 4px 16px rgba(0,0,0,0.2);">
         <div style="width:48px; height:48px; margin:0 auto 16px; border:4px solid var(--border-color); border-top-color:var(--accent-color); border-radius:50%; animation:invoiceSpin 0.8s linear infinite;"></div>
         <div style="font-weight:600;">Generating invoice…</div>
         <div style="font-size:0.88em; opacity:0.7; margin-top:4px;">Please wait</div>
@@ -6641,6 +6662,8 @@ function renderInventoryPage() {
 
     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
       <button id="inv-add">${t("btnAddItem")}</button>
+      <button id="inv-import-excel" title="Import materials from Excel (.xlsx)">Import Excel</button>
+      <button id="inv-import-text-toggle" title="Paste a list of materials">Import Text ▾</button>
       <button id="select-mode-btn-inventory" class="select-mode-btn" onclick="toggleSelectMode('inventory')">Select</button>
       <div class="search-wrapper">
         <input
@@ -6657,6 +6680,15 @@ function renderInventoryPage() {
         <button class="filter-tab ${inventoryFilter === 'low' ? 'active' : ''}" data-filter="low" style="${lowStock > 0 ? '' : 'opacity:0.4;'}">${t("lowStockLabel")} (${lowStock})</button>
         <button class="filter-tab ${inventoryFilter === 'surplus' ? 'active' : ''}" data-filter="surplus">${t("surplusLabel")} (${surplus})</button>
         <button class="filter-tab ${inventoryFilter === 'balanced' ? 'active' : ''}" data-filter="balanced">${t("balancedLabel")} (${balanced})</button>
+      </div>
+    </div>
+
+    <div id="inv-text-import-panel" style="display:none; margin-bottom:16px; padding:16px; border:1px solid var(--border-color); border-radius:8px; background:var(--card-bg);">
+      <label style="font-weight:600; display:block; margin-bottom:8px;">Paste materials (one per line):</label>
+      <textarea id="inv-text-import-area" rows="8" style="width:100%; padding:10px; border:1px solid var(--border-color); border-radius:6px; font-family:inherit; font-size:0.92em; resize:vertical; background:var(--input-bg,var(--card-bg)); color:var(--text-color);" placeholder="Changing Station Assemblies&#10;RV Toilets&#10;Johnny Bolts&#10;Plumbing Pipe Materials&#10;..."></textarea>
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button id="inv-text-import-submit" style="background:var(--button-bg); color:var(--button-text);">Add Materials</button>
+        <button id="inv-text-import-cancel" style="opacity:0.7;">Cancel</button>
       </div>
     </div>
 
@@ -6744,6 +6776,99 @@ function renderInventoryPage() {
     });
     saveDashboard();
     renderInventoryRows();
+  };
+
+  // ── Import Excel ──
+  document.getElementById("inv-import-excel").onclick = async () => {
+    if (!window.dashboardAPI.importInventoryExcel) {
+      showToast("Import not available", "error");
+      return;
+    }
+    const result = await window.dashboardAPI.importInventoryExcel();
+    if (result.canceled) return;
+    if (!result.success) {
+      showToast(result.error || "Import failed", "error");
+      return;
+    }
+    const items = result.items || [];
+    if (!items.length) {
+      showToast("No materials found in file", "warning");
+      return;
+    }
+    let added = 0;
+    items.forEach(item => {
+      const name = (item.material || '').trim();
+      if (!name) return;
+      const existing = dashboardData.inventory.find(
+        inv => (inv.material || '').toLowerCase() === name.toLowerCase()
+      );
+      if (existing) {
+        if (item.inStock) existing.inStock = item.inStock;
+        if (item.required) existing.required = item.required;
+      } else {
+        dashboardData.inventory.push({
+          id: item.id || crypto.randomUUID(),
+          material: name,
+          inStock: item.inStock || 0,
+          required: item.required || 0
+        });
+        added++;
+      }
+    });
+    saveDashboard();
+    renderInventoryPage();
+    const updated = items.length - added;
+    let msg = `Imported ${added} new material${added !== 1 ? 's' : ''}`;
+    if (updated > 0) msg += `, updated ${updated} existing`;
+    showToast(msg, "success");
+  };
+
+  // ── Import Text toggle ──
+  const textPanel = document.getElementById("inv-text-import-panel");
+  const textToggle = document.getElementById("inv-import-text-toggle");
+
+  textToggle.onclick = () => {
+    const open = textPanel.style.display !== "none";
+    textPanel.style.display = open ? "none" : "block";
+    textToggle.textContent = open ? "Import Text ▾" : "Import Text ▴";
+  };
+
+  document.getElementById("inv-text-import-cancel").onclick = () => {
+    textPanel.style.display = "none";
+    textToggle.textContent = "Import Text ▾";
+    document.getElementById("inv-text-import-area").value = "";
+  };
+
+  document.getElementById("inv-text-import-submit").onclick = () => {
+    const raw = document.getElementById("inv-text-import-area").value;
+    const lines = raw.split(/[\n,]+/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) {
+      showToast("No materials entered", "warning");
+      return;
+    }
+    let added = 0;
+    let skipped = 0;
+    lines.forEach(name => {
+      const exists = dashboardData.inventory.some(
+        inv => (inv.material || '').toLowerCase() === name.toLowerCase()
+      );
+      if (exists) { skipped++; return; }
+      dashboardData.inventory.push({
+        id: crypto.randomUUID(),
+        material: name,
+        inStock: 0,
+        required: 0
+      });
+      added++;
+    });
+    saveDashboard();
+    textPanel.style.display = "none";
+    textToggle.textContent = "Import Text ▾";
+    document.getElementById("inv-text-import-area").value = "";
+    renderInventoryPage();
+    let msg = `Added ${added} material${added !== 1 ? 's' : ''}`;
+    if (skipped > 0) msg += ` (${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped)`;
+    showToast(msg, "success");
   };
 
   renderNav("inventory");
@@ -7540,8 +7665,8 @@ async function _viewProfile(userId) {
   const conn = res.connection || { status: 'none' };
 
   const logoHTML = p.logo
-    ? `<img src="${p.logo}" style="width:72px;height:72px;border-radius:16px;object-fit:cover;">`
-    : `<div style="width:72px;height:72px;border-radius:16px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:var(--accent-color);">${(p.company_name || '?').charAt(0).toUpperCase()}</div>`;
+    ? `<img src="${p.logo}" style="width:72px;height:72px;border-radius:12px;object-fit:cover;">`
+    : `<div style="width:72px;height:72px;border-radius:12px;background:var(--border-color);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:var(--accent-color);">${(p.company_name || '?').charAt(0).toUpperCase()}</div>`;
 
   const locParts = p.hide_location ? [] : [p.city, p.state, p.country].filter(Boolean);
   const tags = (p.industry_tags || []).map(t => `<span class="biz-tag">${_esc(t)}</span>`).join('');
@@ -7831,7 +7956,7 @@ function _openAttachmentFull(src) {
   const modal = document.createElement('div');
   modal.className = 'modal';
   modal.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;cursor:pointer;">
-    <img src="${src}" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
+    <img src="${src}" style="max-width:90vw;max-height:90vh;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.35);">
   </div>`;
   modal.onclick = () => modal.remove();
   document.body.appendChild(modal);
