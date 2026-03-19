@@ -138,6 +138,7 @@ if (!appDiv) {
 window.addEventListener("popstate", () => {
   if (currentUser) return;
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
+  if (path === "/auth/callback" && handleOAuthCallback()) return;
   if (path === "/signin") renderLoginPage();
   else if (path === "/signup") renderSignupPage();
   else if (path === "/forgot-password") renderForgotPasswordPage();
@@ -154,6 +155,9 @@ setTimeout(async () => {
     renderDashboard();
     return;
   }
+
+  const startPath = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+  if (startPath === '/auth/callback' && handleOAuthCallback()) return;
 
   // Check if the system has any registered users
   let hasUsers = false;
@@ -1615,6 +1619,7 @@ function navigateTo(path) {
     window.history.pushState({}, '', path);
   }
   const p = (path || '/').replace(/\/+$/, '').split('?')[0] || '/';
+  if (p === '/auth/callback') { handleOAuthCallback(); return; }
   if (p === '/signin') renderLoginPage();
   else if (p === '/signup') renderSignupPage();
   else if (p === '/forgot-password') renderForgotPasswordPage();
@@ -1919,6 +1924,25 @@ function renderLoginPage() {
         <p style="text-align:right; margin:12px 0 0; font-size:0.85em;">
           <a href="#" id="goto-forgot-pw" style="color:var(--info-color); text-decoration:none; opacity:0.8;">Forgot password?</a>
         </p>
+        <div style="display:flex; align-items:center; gap:12px; margin:20px 0 16px;">
+          <div style="flex:1; height:1px; background:var(--border-color, rgba(128,128,128,0.2));"></div>
+          <span style="font-size:0.8em; opacity:0.45; text-transform:uppercase; letter-spacing:0.5px;">or</span>
+          <div style="flex:1; height:1px; background:var(--border-color, rgba(128,128,128,0.2));"></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="oauth-btn" data-provider="google" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Google
+          </button>
+          <button class="oauth-btn" data-provider="github" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 00-3.8 23.38c.6.12.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 016.02 0c2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18a4.65 4.65 0 011.23 3.22c0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.82.58A12 12 0 0012 .3z"/></svg>
+            GitHub
+          </button>
+          <button class="oauth-btn" data-provider="discord" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#5865F2"><path d="M20.32 4.37A19.8 19.8 0 0015.39 3c-.21.38-.46.9-.63 1.3a18.42 18.42 0 00-5.52 0A13.5 13.5 0 008.6 3 19.74 19.74 0 003.68 4.37 20.26 20.26 0 00.1 17.26a19.9 19.9 0 006.07 3.07 14.8 14.8 0 001.27-2.07 12.9 12.9 0 01-2-.96l.49-.38a14.16 14.16 0 0012.14 0l.49.38c-.64.38-1.31.7-2 .96a14.8 14.8 0 001.27 2.07 19.86 19.86 0 006.07-3.07A20.22 20.22 0 0020.32 4.37zM8.02 14.6c-1.12 0-2.04-1.03-2.04-2.3s.9-2.3 2.04-2.3 2.06 1.03 2.04 2.3c0 1.27-.9 2.3-2.04 2.3zm7.97 0c-1.13 0-2.05-1.03-2.05-2.3s.9-2.3 2.05-2.3 2.05 1.03 2.04 2.3c0 1.27-.9 2.3-2.04 2.3z"/></svg>
+            Discord
+          </button>
+        </div>
       </div>
       <p style="text-align:center; margin-top:20px; font-size:0.92em; opacity:0.75;">
         Don't have an account?
@@ -1933,6 +1957,11 @@ function renderLoginPage() {
   document.getElementById("login-submit-btn").onclick = handleLogin;
   document.getElementById("login-password").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleLogin();
+  });
+  document.querySelectorAll(".oauth-btn").forEach(btn => {
+    btn.onmouseenter = () => { btn.style.background = "rgba(128,128,128,0.08)"; btn.style.borderColor = "var(--info-color)"; };
+    btn.onmouseleave = () => { btn.style.background = "transparent"; btn.style.borderColor = "var(--border-color, rgba(128,128,128,0.25))"; };
+    btn.onclick = () => handleOAuthLogin(btn.dataset.provider);
   });
   document.getElementById("login-email").focus();
 }
@@ -1973,6 +2002,66 @@ async function handleLogin() {
     btn.disabled = false;
     btn.textContent = "Sign In";
   }
+}
+
+// ── OAuth Login ──
+
+async function handleOAuthLogin(provider) {
+  if (!window.dashboardAPI?.authOAuthStart) return;
+  const btns = document.querySelectorAll('.oauth-btn');
+  btns.forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+  try {
+    await window.dashboardAPI.authOAuthStart(provider);
+  } catch (err) {
+    btns.forEach(b => { b.disabled = false; b.style.opacity = '1'; });
+    const errDiv = document.getElementById('login-error') || document.getElementById('signup-error');
+    if (errDiv) {
+      errDiv.textContent = err.message || 'Could not start OAuth sign-in.';
+      errDiv.style.display = 'block';
+    }
+  }
+}
+
+function handleOAuthCallback() {
+  const hash = window.location.hash;
+  if (!hash || !hash.includes('access_token=')) return false;
+
+  const params = new URLSearchParams(hash.substring(1));
+  const accessToken = params.get('access_token');
+  if (!accessToken) return false;
+
+  window.history.replaceState({}, '', '/');
+
+  if (!appDiv) return true;
+  appDiv.innerHTML = `
+    <div style="max-width:420px; margin:120px auto; text-align:center; padding:0 20px;">
+      <img src="assets/cube-logo.png" alt="MonoStock" style="width:64px; height:64px; border-radius:14px; margin-bottom:16px; opacity:0.7;">
+      <p style="opacity:0.6; font-size:0.95em;">Signing you in&hellip;</p>
+    </div>
+  `;
+
+  (async () => {
+    try {
+      const res = await window.dashboardAPI.authOAuthComplete(accessToken);
+      if (res.user) {
+        currentUser = res.user;
+        if (res.user.avatar) localStorage.setItem('userAvatar', res.user.avatar);
+        else localStorage.removeItem('userAvatar');
+        document.body.style.paddingTop = '';
+        settingsBtn.style.display = '';
+        const nav = document.getElementById('nav');
+        if (nav) nav.style.display = '';
+        const mb = document.getElementById('menubar');
+        if (mb) mb.style.display = '';
+        showToast(`Welcome, ${res.user.name}!`, 'success');
+        loadAndRenderDashboard();
+      }
+    } catch (err) {
+      navigateTo('/signin');
+    }
+  })();
+
+  return true;
 }
 
 // ── Forgot Password Page ──
@@ -2209,6 +2298,25 @@ function renderSignupPage() {
           <input type="password" id="signup-confirm" placeholder="Re-enter password" autocomplete="new-password">
         </div>
         <button id="signup-submit-btn" style="width:100%; padding:14px; font-size:1em;">Create Account</button>
+        <div style="display:flex; align-items:center; gap:12px; margin:20px 0 16px;">
+          <div style="flex:1; height:1px; background:var(--border-color, rgba(128,128,128,0.2));"></div>
+          <span style="font-size:0.8em; opacity:0.45; text-transform:uppercase; letter-spacing:0.5px;">or</span>
+          <div style="flex:1; height:1px; background:var(--border-color, rgba(128,128,128,0.2));"></div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="oauth-btn" data-provider="google" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Google
+          </button>
+          <button class="oauth-btn" data-provider="github" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 00-3.8 23.38c.6.12.82-.26.82-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 016.02 0c2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18a4.65 4.65 0 011.23 3.22c0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.82.58A12 12 0 0012 .3z"/></svg>
+            GitHub
+          </button>
+          <button class="oauth-btn" data-provider="discord" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 0; border:1px solid var(--border-color, rgba(128,128,128,0.25)); border-radius:10px; background:transparent; cursor:pointer; font-size:0.82em; color:inherit; transition:background 0.15s, border-color 0.15s;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#5865F2"><path d="M20.32 4.37A19.8 19.8 0 0015.39 3c-.21.38-.46.9-.63 1.3a18.42 18.42 0 00-5.52 0A13.5 13.5 0 008.6 3 19.74 19.74 0 003.68 4.37 20.26 20.26 0 00.1 17.26a19.9 19.9 0 006.07 3.07 14.8 14.8 0 001.27-2.07 12.9 12.9 0 01-2-.96l.49-.38a14.16 14.16 0 0012.14 0l.49.38c-.64.38-1.31.7-2 .96a14.8 14.8 0 001.27 2.07 19.86 19.86 0 006.07-3.07A20.22 20.22 0 0020.32 4.37zM8.02 14.6c-1.12 0-2.04-1.03-2.04-2.3s.9-2.3 2.04-2.3 2.06 1.03 2.04 2.3c0 1.27-.9 2.3-2.04 2.3zm7.97 0c-1.13 0-2.05-1.03-2.05-2.3s.9-2.3 2.05-2.3 2.05 1.03 2.04 2.3c0 1.27-.9 2.3-2.04 2.3z"/></svg>
+            Discord
+          </button>
+        </div>
       </div>
       <p style="text-align:center; margin-top:20px; font-size:0.92em; opacity:0.75;">
         Already have an account?
@@ -2222,6 +2330,11 @@ function renderSignupPage() {
   document.getElementById("signup-submit-btn").onclick = handleSignup;
   document.getElementById("signup-confirm").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleSignup();
+  });
+  document.querySelectorAll(".oauth-btn").forEach(btn => {
+    btn.onmouseenter = () => { btn.style.background = "rgba(128,128,128,0.08)"; btn.style.borderColor = "var(--info-color)"; };
+    btn.onmouseleave = () => { btn.style.background = "transparent"; btn.style.borderColor = "var(--border-color, rgba(128,128,128,0.25))"; };
+    btn.onclick = () => handleOAuthLogin(btn.dataset.provider);
   });
   document.getElementById("signup-name").focus();
 }
@@ -2844,6 +2957,7 @@ function showMsg(el, text, isError) {
 
 // ---------------- NAVIGATION ----------------
 function renderNav(currentPage) {
+  if (currentPage !== 'network' && typeof _stopChatPolling === 'function') _stopChatPolling();
   const existingNav = document.getElementById("nav");
   const lang = getSettings().language || "en";
   const t = translations[lang] || translations.en;
@@ -2854,7 +2968,8 @@ function renderNav(currentPage) {
     { id: "customers", name: t.customers, fn: renderCustomersPage },
     { id: "inventory", name: t.inventory, fn: renderInventoryPage },
     { id: "invoices", name: t.invoices, fn: renderInvoicesPage },
-    { id: "network", name: "Network", fn: () => renderNetworkPage() }
+    { id: "network", name: "Network", fn: () => renderNetworkPage() },
+    { id: "design-studio", name: "Design Studio", fn: () => renderDesignStudio() }
   ];
 
   // If nav exists, check if it needs updating (language change) or just active button change
@@ -5026,8 +5141,9 @@ function renderOrderRows(orderList) {
         <button onclick="openBudgetById('${o.id}')" style="background:var(--info-color);">${budgetDisplay}</button>
       </td>
       <td>
+        <button onclick="openBudgetById('${o.id}')" style="background:var(--success-color); padding:6px 10px; font-size:0.85em;">Budget</button>
         <button onclick="generateInvoiceById('${o.id}')" style="background:var(--accent-color); padding:6px 10px; font-size:0.85em;">Invoice</button>
-        <button onclick="duplicateOrderById('${o.id}')" style="background:var(--info-color); padding:6px 10px; font-size:0.85em;">Copy</button>
+        <button onclick="duplicateOrderById('${o.id}')" style="background:var(--info-color); padding:6px 10px; font-size:0.85em;">Duplicate</button>
         <button onclick="editOrderById('${o.id}')" style="background:var(--warning-color); padding:6px 10px; font-size:0.85em;">Edit</button>
         <button onclick="deleteOrderById('${o.id}')" style="background:var(--danger-color); padding:6px 10px; font-size:0.85em;">Trash</button>
       </td>
@@ -6664,6 +6780,8 @@ function renderInventoryPage() {
       <button id="inv-add">${t("btnAddItem")}</button>
       <button id="inv-import-excel" title="Import materials from Excel (.xlsx)">Import Excel</button>
       <button id="inv-import-text-toggle" title="Paste a list of materials">Import Text ▾</button>
+      <button id="inv-share-btn" style="background:var(--info-color);" title="Share your inventory with other users">Share Inventory</button>
+      <button id="inv-shared-toggle" style="background:var(--border-color); color:var(--text-color);">Shared With Me ▾</button>
       <button id="select-mode-btn-inventory" class="select-mode-btn" onclick="toggleSelectMode('inventory')">Select</button>
       <div class="search-wrapper">
         <input
@@ -6691,6 +6809,8 @@ function renderInventoryPage() {
         <button id="inv-text-import-cancel" style="opacity:0.7;">Cancel</button>
       </div>
     </div>
+
+    <div id="inv-shared-panel" style="display:none; margin-bottom:16px;"></div>
 
     <div id="bulk-bar-inventory" class="bulk-action-bar" style="display:none;">
       <span class="bulk-count">None selected</span>
@@ -6871,7 +6991,259 @@ function renderInventoryPage() {
     showToast(msg, "success");
   };
 
+  // ── Share Inventory ──
+  document.getElementById("inv-share-btn").onclick = () => showShareInventoryModal();
+
+  // ── Shared With Me dropdown ──
+  const sharedPanel = document.getElementById("inv-shared-panel");
+  const sharedToggle = document.getElementById("inv-shared-toggle");
+
+  sharedToggle.onclick = async () => {
+    const isOpen = sharedPanel.style.display !== "none";
+    if (isOpen) {
+      sharedPanel.style.display = "none";
+      sharedToggle.textContent = "Shared With Me ▾";
+      return;
+    }
+    sharedToggle.textContent = "Shared With Me ▴";
+    sharedPanel.style.display = "block";
+    sharedPanel.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.5;">Loading shared inventories…</div>';
+
+    if (!window.dashboardAPI.getSharedInventories) {
+      sharedPanel.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.5;">Not available</div>';
+      return;
+    }
+
+    try {
+      const res = await window.dashboardAPI.getSharedInventories();
+      if (!res.success || !res.shared || !res.shared.length) {
+        sharedPanel.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.5;">No one has shared their inventory with you yet.</div>';
+        return;
+      }
+      renderSharedInventoriesPanel(res.shared, sharedPanel);
+    } catch (e) {
+      console.error('[inventory] shared load error:', e);
+      sharedPanel.innerHTML = '<div style="padding:20px; text-align:center; color:var(--danger-color);">Failed to load shared inventories.</div>';
+    }
+  };
+
   renderNav("inventory");
+}
+
+function renderSharedInventoriesPanel(shared, container) {
+  const cards = shared.map(s => {
+    const inv = s.inventory || [];
+    const lowStock = inv.filter(i => (i.required || 0) - (i.inStock || 0) > 0).length;
+    return `
+      <div class="shared-inv-card" style="border:1px solid var(--border-color); border-radius:10px; margin-bottom:12px; overflow:hidden;">
+        <div class="shared-inv-header" data-owner-id="${s.ownerId}" style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px; cursor:pointer; background:var(--card-bg);">
+          <div>
+            <strong style="font-size:1em;">${s.ownerName}</strong>
+            <span style="font-size:0.82em; opacity:0.55; margin-left:8px;">${s.ownerEmail}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="font-size:0.85em; opacity:0.7;">${inv.length} item${inv.length !== 1 ? 's' : ''}${lowStock > 0 ? `, <span style="color:var(--danger-color);">${lowStock} low</span>` : ''}</span>
+            <span class="shared-inv-arrow" style="font-size:0.8em; transition:transform 0.2s;">▾</span>
+          </div>
+        </div>
+        <div class="shared-inv-body" data-owner-id="${s.ownerId}" style="display:none; padding:0 18px 14px;">
+          ${inv.length ? `
+            <table style="width:100%; border-collapse:collapse; margin-top:8px;">
+              <thead>
+                <tr style="text-align:left; font-size:0.82em; opacity:0.6;">
+                  <th style="padding:6px 8px;">Material</th>
+                  <th style="padding:6px 8px; text-align:right;">In Stock</th>
+                  <th style="padding:6px 8px; text-align:right;">Required</th>
+                  <th style="padding:6px 8px; text-align:right;">Delta</th>
+                  <th style="padding:6px 8px; text-align:center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${inv.map(item => {
+                  const delta = (item.required || 0) - (item.inStock || 0);
+                  const isLow = delta > 0;
+                  const isSurplus = delta < 0;
+                  const deltaDisplay = isSurplus ? '(' + Math.abs(delta) + ')' : String(delta);
+                  const deltaColor = isSurplus ? 'var(--success-color)' : isLow ? 'var(--danger-color)' : 'inherit';
+                  const badge = isLow ? '<span style="background:var(--danger-color);color:#fff;padding:2px 8px;border-radius:10px;font-size:0.78em;">Low</span>'
+                    : isSurplus ? '<span style="background:var(--success-color);color:#fff;padding:2px 8px;border-radius:10px;font-size:0.78em;">Surplus</span>'
+                    : '<span style="opacity:0.4;font-size:0.78em;">OK</span>';
+                  return '<tr style="border-top:1px solid var(--border-color);">' +
+                    '<td style="padding:8px;">' + (item.material || '') + '</td>' +
+                    '<td style="padding:8px; text-align:right;">' + (item.inStock || 0) + '</td>' +
+                    '<td style="padding:8px; text-align:right;">' + (item.required || 0) + '</td>' +
+                    '<td style="padding:8px; text-align:right; color:' + deltaColor + ';">' + deltaDisplay + '</td>' +
+                    '<td style="padding:8px; text-align:center;">' + badge + '</td></tr>';
+                }).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="opacity:0.5; font-size:0.88em; padding:8px 0;">No inventory items.</p>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="padding:4px 0; margin-bottom:4px;">
+      <strong style="font-size:1.05em;">Shared Inventories</strong>
+      <span style="font-size:0.85em; opacity:0.5; margin-left:8px;">${shared.length} user${shared.length !== 1 ? 's' : ''}</span>
+    </div>
+    ${cards}
+  `;
+
+  container.querySelectorAll('.shared-inv-header').forEach(header => {
+    header.onclick = () => {
+      const ownerId = header.dataset.ownerId;
+      const body = container.querySelector(`.shared-inv-body[data-owner-id="${ownerId}"]`);
+      const arrow = header.querySelector('.shared-inv-arrow');
+      if (!body) return;
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      if (arrow) arrow.textContent = open ? '▾' : '▴';
+    };
+  });
+}
+
+async function showShareInventoryModal() {
+  let collaborators = [];
+  try {
+    if (window.dashboardAPI.getInventoryShares) {
+      const res = await window.dashboardAPI.getInventoryShares();
+      if (res.success) collaborators = res.collaborators;
+    }
+  } catch (e) {
+    console.error('[inventory-share] Failed to load shares:', e);
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+
+  function renderShareList() {
+    return collaborators.length
+      ? collaborators.map(c => `
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:8px;">
+          <div>
+            <strong style="font-size:0.9em;">${c.name}</strong>
+            <div style="font-size:0.78em; opacity:0.55;">${c.email}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <select class="inv-share-role-select" data-user-id="${c.userId}" style="padding:4px 8px; font-size:0.82em; border-radius:6px;">
+              <option value="viewer" ${c.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+              <option value="editor" ${c.role === 'editor' ? 'selected' : ''}>Editor</option>
+            </select>
+            <button class="inv-share-remove-btn" data-user-id="${c.userId}" style="background:var(--danger-color); padding:4px 10px; font-size:0.8em; border-radius:6px;">Remove</button>
+          </div>
+        </div>
+      `).join('')
+      : '<p style="opacity:0.5; font-size:0.88em; margin:8px 0;">Not shared with anyone yet.</p>';
+  }
+
+  modal.innerHTML = `
+    <div class="share-modal-backdrop" style="position:absolute;inset:0;cursor:pointer;" aria-label="Close"></div>
+    <div class="modal-box share-modal-content" style="max-width:520px; position:relative; z-index:1; pointer-events:auto;">
+      <h3 style="margin-top:0; margin-bottom:16px;">Share Your Inventory</h3>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.9em; opacity:0.8; display:block; margin-bottom:8px;">Invite by email</label>
+        <input id="inv-share-email" type="email" placeholder="user@example.com" style="width:100%; padding:12px 14px; font-size:1em; box-sizing:border-box; margin-bottom:10px; border:1px solid var(--border-color); border-radius:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="inv-share-role" style="padding:10px 12px; border-radius:8px; font-size:0.95em;">
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+          <button id="inv-share-invite-btn" style="background:var(--success-color); white-space:nowrap; padding:10px 18px;">Share</button>
+        </div>
+        <div id="inv-share-error" style="color:var(--danger-color); font-size:0.82em; margin-top:8px; display:none;"></div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.9em; opacity:0.8; display:block; margin-bottom:8px;">Shared with</label>
+        <div id="inv-share-list">${renderShareList()}</div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end;">
+        <button id="inv-share-close-btn" style="background:var(--border-color); color:var(--text-color); padding:10px 20px;">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const emailInput = document.getElementById("inv-share-email");
+  const backdrop = modal.querySelector(".share-modal-backdrop");
+  const modalContent = modal.querySelector(".share-modal-content");
+
+  backdrop.onclick = () => modal.remove();
+  if (modalContent) {
+    modalContent.addEventListener("click", e => e.stopPropagation());
+    modalContent.addEventListener("mousedown", e => e.stopPropagation());
+  }
+  if (emailInput) emailInput.focus();
+
+  function refreshShareList() {
+    const listEl = document.getElementById("inv-share-list");
+    if (listEl) listEl.innerHTML = renderShareList();
+    wireShareEvents();
+  }
+
+  function wireShareEvents() {
+    modal.querySelectorAll(".inv-share-role-select").forEach(sel => {
+      sel.onchange = async () => {
+        try {
+          await window.dashboardAPI.updateInventoryShareRole(sel.dataset.userId, sel.value);
+          const c = collaborators.find(x => x.userId === sel.dataset.userId);
+          if (c) c.role = sel.value;
+          showToast("Role updated", "success");
+        } catch (e) {
+          showToast("Failed to update role", "error");
+        }
+      };
+    });
+
+    modal.querySelectorAll(".inv-share-remove-btn").forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await window.dashboardAPI.removeInventoryShare(btn.dataset.userId);
+          collaborators = collaborators.filter(x => x.userId !== btn.dataset.userId);
+          refreshShareList();
+          showToast("Share removed", "success");
+        } catch (e) {
+          showToast("Failed to remove share", "error");
+        }
+      };
+    });
+  }
+  wireShareEvents();
+
+  document.getElementById("inv-share-invite-btn").onclick = async () => {
+    const email = document.getElementById("inv-share-email").value.trim();
+    const role = document.getElementById("inv-share-role").value;
+    const errEl = document.getElementById("inv-share-error");
+
+    if (!email) { errEl.textContent = "Enter an email address"; errEl.style.display = "block"; return; }
+    errEl.style.display = "none";
+
+    try {
+      const res = await window.dashboardAPI.shareInventory(email, role);
+      if (res.success) {
+        collaborators.push(res.collaborator);
+        document.getElementById("inv-share-email").value = "";
+        refreshShareList();
+        showToast(`Shared with ${res.collaborator.name || email}`, "success");
+      } else {
+        errEl.textContent = res.error || "Failed to share";
+        errEl.style.display = "block";
+      }
+    } catch (e) {
+      errEl.textContent = e.message || "Failed to share";
+      errEl.style.display = "block";
+    }
+  };
+
+  document.getElementById("inv-share-close-btn").onclick = () => modal.remove();
+  modal.addEventListener("click", e => {
+    if (e.target === modal || e.target === backdrop) modal.remove();
+  });
 }
 
 function updateInventoryStats() {
@@ -7400,11 +7772,17 @@ let networkProfileCache = null;
 let networkPendingCount = 0;
 let networkUnreadCount = 0;
 let networkChatPartner = null;
+let _chatPollTimer = null;
+
+function _stopChatPolling() {
+  if (_chatPollTimer) { clearInterval(_chatPollTimer); _chatPollTimer = null; }
+}
 
 async function renderNetworkPage(sub) {
   if (!appDiv) return;
   if (!currentUser) { renderLoginPage(); return; }
   window.currentPage = 'network';
+  _stopChatPolling();
   if (sub) networkSubPage = sub;
 
   renderNav('network');
@@ -7869,6 +8247,9 @@ async function _renderChat(partnerId, partnerName) {
     .addEventListener('keydown', e => { if (e.key === 'Enter') _sendChatMsg(partnerId); });
 
   await _loadChatMessages(partnerId);
+
+  _stopChatPolling();
+  _chatPollTimer = setInterval(() => _pollChatMessages(partnerId), 4000);
 }
 
 function _pickChatAttachment() {
@@ -8052,17 +8433,43 @@ async function _sendFolderInvite(partnerId) {
   }
 }
 
+let _chatLastMsgId = null;
+let _chatLastMsgCount = 0;
+
+async function _pollChatMessages(partnerId) {
+  const container = document.getElementById('chat-messages');
+  if (!container) { _stopChatPolling(); return; }
+
+  try {
+    const res = await window.dashboardAPI.getConversation(partnerId);
+    const msgs = res.messages || [];
+    if (msgs.length !== _chatLastMsgCount || (msgs.length > 0 && msgs[msgs.length - 1].id !== _chatLastMsgId)) {
+      _renderChatBubbles(container, msgs);
+    }
+  } catch (e) {
+    // Silently ignore poll errors
+  }
+}
+
 async function _loadChatMessages(partnerId) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
 
   const res = await window.dashboardAPI.getConversation(partnerId);
   const msgs = res.messages || [];
+  _renderChatBubbles(container, msgs);
+}
+
+function _renderChatBubbles(container, msgs) {
+  _chatLastMsgCount = msgs.length;
+  _chatLastMsgId = msgs.length > 0 ? msgs[msgs.length - 1].id : null;
 
   if (msgs.length === 0) {
     container.innerHTML = '<div class="empty-state" style="padding:40px 20px;">No messages yet. Say hello!</div>';
     return;
   }
+
+  const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
 
   container.innerHTML = msgs.map(m => {
     const isSent = m.sender_id === currentUser.id;
@@ -8088,7 +8495,7 @@ async function _loadChatMessages(partnerId) {
     </div>`;
   }).join('');
 
-  container.scrollTop = container.scrollHeight;
+  if (wasAtBottom) container.scrollTop = container.scrollHeight;
 }
 
 async function _sendChatMsg(partnerId) {

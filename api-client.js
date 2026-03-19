@@ -436,6 +436,28 @@
     });
   }
 
+  let _oauthConfig = null;
+  async function _getOAuthConfig() {
+    if (_oauthConfig) return _oauthConfig;
+    _oauthConfig = await apiJSON('/api/auth/oauth-config');
+    return _oauthConfig;
+  }
+
+  async function authOAuthStart(provider) {
+    const cfg = await _getOAuthConfig();
+    const redirectTo = encodeURIComponent(window.location.origin + '/auth/callback');
+    window.location.href = `${cfg.supabaseUrl}/auth/v1/authorize?provider=${provider}&redirect_to=${redirectTo}`;
+  }
+
+  async function authOAuthComplete(accessToken) {
+    const res = await apiJSON('/api/auth/oauth/complete', {
+      method: 'POST',
+      body: JSON.stringify({ access_token: accessToken })
+    });
+    if (res.token) _setToken(res.token);
+    return res;
+  }
+
   // ── Verification API ──
 
   async function sendVerificationEmail() {
@@ -503,6 +525,34 @@
       method: 'POST',
       body: JSON.stringify({ materials })
     });
+  }
+
+  // ── Inventory sharing ──
+
+  async function getInventoryShares() {
+    return apiJSON('/api/inventory/shares');
+  }
+
+  async function shareInventory(email, role) {
+    return apiJSON('/api/inventory/shares', {
+      method: 'POST',
+      body: JSON.stringify({ email, role })
+    });
+  }
+
+  async function updateInventoryShareRole(userId, role) {
+    return apiJSON(`/api/inventory/shares/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role })
+    });
+  }
+
+  async function removeInventoryShare(userId) {
+    return apiJSON(`/api/inventory/shares/${userId}`, { method: 'DELETE' });
+  }
+
+  async function getSharedInventories() {
+    return apiJSON('/api/inventory/shared-with-me');
   }
 
   // ── Settings sync ──
@@ -718,6 +768,13 @@
     saveBudget,
     checkInventory,
 
+    // ── Inventory sharing ──
+    getInventoryShares,
+    shareInventory,
+    updateInventoryShareRole,
+    removeInventoryShare,
+    getSharedInventories,
+
     // ── Collaboration ──
     getFolderCollaborators,
     addCollaborator,
@@ -740,6 +797,8 @@
     authStatus,
     authForgotPassword,
     authResetPassword,
+    authOAuthStart,
+    authOAuthComplete,
     isLoggedIn: () => !!_getToken(),
 
     // ── Verification ──

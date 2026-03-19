@@ -212,5 +212,47 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// ── OAuth: return Supabase config for frontend-driven OAuth flow ──
+
+router.get('/oauth-config', (_req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(503).json({ error: 'OAuth is not configured' });
+  }
+  res.json({ supabaseUrl, supabaseKey });
+});
+
+// ── OAuth: verify Supabase access token, find/create local user, issue JWT ──
+
+router.post('/oauth/complete', async (req, res) => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) {
+      return res.status(400).json({ error: 'Access token is required' });
+    }
+
+    const supabase = require('../data/supabase');
+    const { data: { user: supaUser }, error } = await supabase.auth.getUser(access_token);
+
+    if (error || !supaUser || !supaUser.email) {
+      return res.status(401).json({ error: 'Invalid or expired OAuth token' });
+    }
+
+    const meta = supaUser.user_metadata || {};
+    const localUser = await users.findOrCreateOAuthUser({
+      email: supaUser.email,
+      name: meta.full_name || meta.name || meta.preferred_username || supaUser.email.split('@')[0],
+      avatar: meta.avatar_url || meta.picture || null
+    });
+
+    const token = signToken(localUser);
+    res.json({ success: true, token, user: localUser });
+  } catch (err) {
+    console.error('[auth] oauth complete error:', err);
+    res.status(500).json({ error: 'OAuth authentication failed' });
+  }
+});
+
 module.exports = router;
 module.exports.JWT_SECRET = JWT_SECRET;

@@ -4,6 +4,7 @@
 -- ============================================================
 
 -- Drop all existing tables
+DROP TABLE IF EXISTS inventory_shares CASCADE;
 DROP TABLE IF EXISTS backups CASCADE;
 DROP TABLE IF EXISTS app_settings CASCADE;
 DROP TABLE IF EXISTS user_preferences CASCADE;
@@ -249,6 +250,21 @@ ALTER TABLE messages            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trust_scores        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_flags          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folder_collaborators ENABLE ROW LEVEL SECURITY;
+
+-- Inventory shares (share your inventory with other users)
+CREATE TABLE inventory_shares (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shared_with_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'editor')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(owner_id, shared_with_id)
+);
+
+CREATE INDEX idx_inv_shares_owner ON inventory_shares(owner_id);
+CREATE INDEX idx_inv_shares_shared ON inventory_shares(shared_with_id);
+
+ALTER TABLE inventory_shares ENABLE ROW LEVEL SECURITY;
 
 -- No permissive policies are created.
 -- RLS enabled + no matching policy = deny all for anon/authenticated roles.

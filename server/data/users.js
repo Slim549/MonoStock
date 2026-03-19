@@ -242,6 +242,37 @@ async function resetPasswordWithToken(token, newPassword) {
   return { success: true };
 }
 
+async function findOrCreateOAuthUser({ email, name, avatar }) {
+  let user = await findByEmail(email);
+  if (user) {
+    if (!user.avatar && avatar) {
+      await supabase.from('users').update({ avatar, updated_at: Date.now() }).eq('id', user.id);
+      user.avatar = avatar;
+    }
+    return toPublic(user);
+  }
+
+  const now = Date.now();
+  const newUser = {
+    id: uuidv4(),
+    name: name || email.split('@')[0],
+    email: email.toLowerCase(),
+    password_hash: null,
+    avatar: avatar || null,
+    email_verified: true,
+    verification_level: 'email_verified',
+    domain: null,
+    domain_verified: false,
+    verification_badge: false,
+    created_at: now,
+    updated_at: now
+  };
+
+  const { error } = await supabase.from('users').insert(newUser);
+  if (error) throw error;
+  return toPublic(newUser);
+}
+
 module.exports = {
   findByEmail,
   findById,
@@ -258,5 +289,6 @@ module.exports = {
   setDomainVerified,
   getRawUser,
   getDomainToken,
-  resetPasswordWithToken
+  resetPasswordWithToken,
+  findOrCreateOAuthUser
 };

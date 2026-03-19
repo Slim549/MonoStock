@@ -771,6 +771,97 @@ async function getConversation(userId, partnerId, limit = 50) {
   return data || [];
 }
 
+// ── Inventory sharing helpers ──
+
+async function shareInventory(ownerId, sharedWithId, role = 'viewer') {
+  const id = uuidv4();
+  const { error } = await supabase.from('inventory_shares').upsert(
+    { id, owner_id: ownerId, shared_with_id: sharedWithId, role },
+    { onConflict: 'owner_id,shared_with_id' }
+  );
+  if (error) throw error;
+}
+
+async function unshareInventory(ownerId, sharedWithId) {
+  const { error } = await supabase
+    .from('inventory_shares')
+    .delete()
+    .eq('owner_id', ownerId)
+    .eq('shared_with_id', sharedWithId);
+  if (error) throw error;
+}
+
+async function getInventorySharedWith(ownerId) {
+  const { data, error } = await supabase
+    .from('inventory_shares')
+    .select('shared_with_id, role, created_at')
+    .eq('owner_id', ownerId);
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  const userIds = data.map(r => r.shared_with_id);
+  const { data: users, error: uErr } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .in('id', userIds);
+  if (uErr) throw uErr;
+
+  const userMap = {};
+  (users || []).forEach(u => { userMap[u.id] = u; });
+
+  return data.map(r => ({
+    userId: r.shared_with_id,
+    role: r.role,
+    createdAt: r.created_at,
+    name: userMap[r.shared_with_id]?.name || '',
+    email: userMap[r.shared_with_id]?.email || ''
+  }));
+}
+
+async function getSharedInventories(userId) {
+  const { data, error } = await supabase
+    .from('inventory_shares')
+    .select('owner_id, role')
+    .eq('shared_with_id', userId);
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  const ownerIds = data.map(r => r.owner_id);
+  const roleMap = {};
+  data.forEach(r => { roleMap[r.owner_id] = r.role; });
+
+  const { data: users, error: uErr } = await supabase
+    .from('users')
+    .select('id, name, email')
+    .in('id', ownerIds);
+  if (uErr) throw uErr;
+
+  const userMap = {};
+  (users || []).forEach(u => { userMap[u.id] = u; });
+
+  const results = [];
+  for (const ownerId of ownerIds) {
+    const inventory = await getAll('inventory', ownerId);
+    results.push({
+      ownerId,
+      ownerName: userMap[ownerId]?.name || userMap[ownerId]?.email || 'Unknown',
+      ownerEmail: userMap[ownerId]?.email || '',
+      role: roleMap[ownerId],
+      inventory
+    });
+  }
+  return results;
+}
+
+async function updateInventoryShareRole(ownerId, sharedWithId, role) {
+  const { error } = await supabase
+    .from('inventory_shares')
+    .update({ role })
+    .eq('owner_id', ownerId)
+    .eq('shared_with_id', sharedWithId);
+  if (error) throw error;
+}
+
 async function getUnreadMessageCount(userId) {
   const { count, error } = await supabase
     .from('messages')
@@ -821,5 +912,11 @@ module.exports = {
   sendMessage,
   acceptFolderInvite,
   getConversation,
-  getUnreadMessageCount
+  getUnreadMessageCount,
+  // Inventory sharing
+  shareInventory,
+  unshareInventory,
+  getInventorySharedWith,
+  getSharedInventories,
+  updateInventoryShareRole
 };

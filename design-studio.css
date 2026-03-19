@@ -1,0 +1,1261 @@
+/* ═══════════════════════════════════════════════════════════
+   Design Studio – Canva-like Editor
+   ═══════════════════════════════════════════════════════════ */
+
+/* Override global canvas CSS (Chart.js rules) that break Fabric.js */
+.ds-editor canvas,
+.ds-canvas-wrapper canvas,
+.ds-canvas-wrapper .canvas-container canvas {
+  max-height: none !important;
+  max-width: none !important;
+  border-radius: 0 !important;
+  filter: none !important;
+}
+
+.ds-canvas-wrapper .canvas-container {
+  max-height: none !important;
+  max-width: none !important;
+}
+
+/* ── Start Screen ── */
+.ds-start-screen {
+  height: 100vh;
+  background: var(--bg-color);
+  padding: 40px 24px 60px;
+  overflow-y: auto;
+}
+
+.ds-start-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.ds-start-header h1 {
+  font-size: 2.2em;
+  font-weight: 800;
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, var(--button-bg), var(--accent-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ds-start-header p {
+  color: var(--text-color);
+  opacity: 0.6;
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.ds-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+  max-width: 1100px;
+  margin: 0 auto 48px;
+}
+
+.ds-preset-card {
+  background: var(--card-bg);
+  border: 2px solid var(--border-color);
+  border-radius: 14px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.ds-preset-card:hover {
+  border-color: var(--button-bg);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+}
+
+.ds-preset-preview {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  max-height: 120px;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+[data-theme="dark"] .ds-preset-preview {
+  background: #2a2a3e;
+}
+
+.ds-preset-name {
+  font-weight: 700;
+  font-size: 0.95em;
+  margin-bottom: 4px;
+  color: var(--text-color);
+}
+
+.ds-preset-size {
+  font-size: 0.8em;
+  opacity: 0.5;
+  color: var(--text-color);
+}
+
+.ds-custom-size {
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 28px;
+  border: 1px solid var(--border-color);
+}
+
+.ds-custom-size h3 {
+  margin: 0 0 16px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.ds-custom-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ds-custom-inputs input {
+  width: 110px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--input-text);
+  font-size: 1em;
+  text-align: center;
+}
+
+.ds-custom-inputs span {
+  font-weight: 600;
+  opacity: 0.5;
+  color: var(--text-color);
+}
+
+.ds-custom-inputs button {
+  padding: 10px 28px;
+  border-radius: 8px;
+  border: none;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ds-custom-inputs button:hover {
+  background: var(--button-hover);
+}
+
+.ds-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-color);
+  opacity: 0.6;
+  text-decoration: none;
+  font-weight: 600;
+  margin-bottom: 20px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-size: 0.95em;
+  padding: 0;
+}
+
+.ds-back-link:hover {
+  opacity: 1;
+}
+
+/* ── Start Screen Tabs ── */
+.ds-start-tabs {
+  display: flex;
+  gap: 0;
+  max-width: 1100px;
+  margin: 0 auto 28px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.ds-start-tab {
+  padding: 12px 28px;
+  border: none;
+  background: none;
+  color: var(--text-color);
+  font-weight: 700;
+  font-size: 1em;
+  cursor: pointer;
+  opacity: 0.45;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+
+.ds-start-tab:hover {
+  opacity: 0.7;
+}
+
+.ds-start-tab.active {
+  opacity: 1;
+  border-bottom-color: var(--button-bg);
+}
+
+.ds-start-page {
+  display: none;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.ds-start-page.active {
+  display: block;
+}
+
+/* ── Empty State ── */
+.ds-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-color);
+}
+
+.ds-empty-state p {
+  margin: 16px 0 20px;
+  font-size: 1.05em;
+  opacity: 0.5;
+}
+
+.ds-empty-cta {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 10px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-weight: 700;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ds-empty-cta:hover {
+  background: var(--button-hover);
+}
+
+/* ── Saved Designs Grid ── */
+
+.ds-saved-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.ds-saved-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.ds-saved-card:hover {
+  border-color: var(--button-bg);
+  box-shadow: var(--shadow-md);
+}
+
+.ds-saved-thumb {
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: var(--bg-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.ds-saved-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.ds-saved-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: var(--border-color);
+}
+
+.ds-saved-info {
+  padding: 10px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ds-saved-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ds-saved-name {
+  font-weight: 700;
+  font-size: 0.88em;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ds-saved-rename-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.ds-saved-card:hover .ds-saved-rename-btn {
+  opacity: 0.45;
+}
+
+.ds-saved-rename-btn:hover {
+  opacity: 1 !important;
+  background: var(--border-color);
+}
+
+.ds-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.88em;
+  color: var(--text-color);
+  background: var(--bg-color);
+  border: 1px solid var(--button-bg);
+  border-radius: 5px;
+  padding: 2px 6px;
+  outline: none;
+  font-family: inherit;
+}
+
+.ds-saved-meta {
+  font-size: 0.75em;
+  opacity: 0.45;
+  color: var(--text-color);
+}
+
+.ds-saved-actions {
+  padding: 8px 12px 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ds-saved-open {
+  flex: 1;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-weight: 700;
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ds-saved-open:hover {
+  background: var(--button-hover);
+}
+
+.ds-saved-del {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+  transition: all 0.15s;
+}
+
+.ds-saved-del:hover {
+  opacity: 1;
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+/* ── Save Button ── */
+.ds-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-weight: 700;
+  font-size: 0.82em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ds-save-btn:hover {
+  border-color: var(--button-bg);
+  background: var(--bg-color);
+}
+
+.ds-save-indicator {
+  font-size: 0.72em;
+  color: var(--text-color);
+  opacity: 0.4;
+  white-space: nowrap;
+  transition: opacity 0.3s;
+}
+
+.ds-save-indicator.ds-just-saved {
+  opacity: 0.8;
+  color: #22c55e;
+}
+
+/* ── Fill Mode Toggle ── */
+.ds-fill-mode-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.ds-fill-mode-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.78em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: center;
+}
+
+.ds-fill-mode-btn:hover {
+  border-color: var(--button-bg);
+}
+
+.ds-fill-mode-btn.active {
+  background: var(--button-bg);
+  color: var(--button-text);
+  border-color: var(--button-bg);
+}
+
+/* ── Editor Layout ── */
+.ds-editor {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color);
+  z-index: 10000;
+}
+
+/* ── Toolbar ── */
+.ds-toolbar {
+  height: 50px;
+  min-height: 50px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  gap: 8px;
+  z-index: 10;
+}
+
+.ds-toolbar-left,
+.ds-toolbar-center,
+.ds-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ds-toolbar-title {
+  font-weight: 700;
+  font-size: 0.95em;
+  color: var(--text-color);
+  margin-left: 4px;
+}
+
+.ds-tool-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+  font-size: 0.82em;
+  font-weight: 600;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.ds-tool-btn:hover {
+  background: var(--border-color);
+}
+
+.ds-tool-btn.active {
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+
+.ds-tool-btn.ds-back-btn {
+  width: auto;
+  padding: 0 8px;
+}
+
+.ds-toolbar-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border-color);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.ds-zoom-label {
+  font-size: 0.82em;
+  font-weight: 700;
+  min-width: 48px;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.7;
+  user-select: none;
+}
+
+.ds-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-weight: 700;
+  font-size: 0.82em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ds-export-btn:hover {
+  background: var(--button-hover);
+}
+
+/* ── Main Layout ── */
+.ds-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebars ── */
+.ds-sidebar-left,
+.ds-sidebar-right {
+  width: 272px;
+  min-width: 272px;
+  min-height: 0;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-color);
+  overflow-y: hidden;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-sidebar-right {
+  border-right: none;
+  border-left: 1px solid var(--border-color);
+}
+
+.ds-sidebar-left::-webkit-scrollbar,
+.ds-sidebar-right::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ds-sidebar-left::-webkit-scrollbar-thumb,
+.ds-sidebar-right::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+/* ── Sidebar Tabs ── */
+.ds-sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.ds-tab {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: none;
+  color: var(--text-color);
+  font-weight: 600;
+  font-size: 0.85em;
+  cursor: pointer;
+  opacity: 0.5;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.ds-tab:hover {
+  opacity: 0.8;
+}
+
+.ds-tab.active {
+  opacity: 1;
+  border-bottom-color: var(--button-bg);
+}
+
+.ds-tab-content {
+  display: none;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ds-tab-content.active {
+  display: block;
+}
+
+#ds-tab-design-assets.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Panels ── */
+.ds-panel {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ds-panel-header {
+  font-weight: 700;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-color);
+  opacity: 0.5;
+  margin-bottom: 10px;
+}
+
+.ds-panel select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--input-text);
+  font-size: 0.88em;
+  margin-bottom: 8px;
+}
+
+/* ── Page Size Row ── */
+.ds-size-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ds-size-row label {
+  font-weight: 700;
+  font-size: 0.78em;
+  opacity: 0.5;
+  color: var(--text-color);
+}
+
+.ds-size-row input {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--input-text);
+  font-size: 0.85em;
+  text-align: center;
+  width: 0;
+}
+
+/* ── Elements Grid ── */
+.ds-element-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.ds-icon-grid {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.ds-element-btn {
+  aspect-ratio: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 6px;
+  color: var(--text-color);
+}
+
+/* ── Design Asset Library ── */
+.ds-asset-controls {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.ds-asset-search {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.85em;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.ds-asset-search:focus {
+  border-color: var(--button-bg);
+}
+
+.ds-asset-category {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-size: 0.82em;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ds-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  align-content: start;
+}
+
+.ds-asset-tile {
+  aspect-ratio: 1;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  transition: all 0.15s;
+}
+
+.ds-asset-tile:hover {
+  border-color: var(--button-bg);
+  background: var(--card-bg);
+  transform: scale(1.05);
+}
+
+.ds-asset-tile img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.ds-asset-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 32px 12px;
+  color: var(--text-color);
+  opacity: 0.4;
+  font-size: 0.85em;
+}
+
+.ds-element-btn:hover {
+  border-color: var(--button-bg);
+  background: var(--card-bg);
+  transform: scale(1.06);
+}
+
+.ds-icon-btn {
+  padding: 8px;
+}
+
+.ds-icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── Text Buttons ── */
+.ds-text-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ds-add-text-btn {
+  width: 100%;
+  padding: 14px 14px;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-color);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-color);
+  transition: all 0.15s;
+}
+
+.ds-add-text-btn:hover {
+  border-color: var(--button-bg);
+  border-style: solid;
+  background: var(--card-bg);
+}
+
+/* ── Upload Button ── */
+.ds-upload-btn {
+  width: 100%;
+  padding: 16px;
+  border: 2px dashed var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.88em;
+  color: var(--text-color);
+  transition: all 0.15s;
+}
+
+.ds-upload-btn:hover {
+  border-color: var(--button-bg);
+  background: var(--card-bg);
+}
+
+/* ── Canvas Wrapper ── */
+.ds-canvas-wrapper {
+  flex: 1;
+  background: #e5e5e5;
+  position: relative;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .ds-canvas-wrapper {
+  background: #1a1a2e;
+}
+
+.ds-canvas-wrapper canvas {
+  display: block;
+}
+
+/* ── Properties Panel ── */
+#ds-props-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ds-no-selection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.4;
+}
+
+.ds-no-selection p {
+  margin: 12px 0 0;
+  font-size: 0.88em;
+  line-height: 1.5;
+}
+
+.ds-prop-group {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ds-prop-group-title {
+  font-weight: 700;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-color);
+  opacity: 0.45;
+  margin-bottom: 10px;
+}
+
+.ds-prop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ds-prop-row:last-child {
+  margin-bottom: 0;
+}
+
+.ds-prop-row label {
+  font-weight: 600;
+  font-size: 0.78em;
+  opacity: 0.6;
+  min-width: 20px;
+  color: var(--text-color);
+}
+
+.ds-prop-row label.wide {
+  min-width: 65px;
+}
+
+.ds-prop-row input[type="number"],
+.ds-prop-row input[type="text"] {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--input-text);
+  font-size: 0.85em;
+  width: 0;
+}
+
+.ds-prop-row input[type="color"] {
+  width: 36px;
+  height: 30px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 2px;
+  cursor: pointer;
+  background: var(--input-bg);
+}
+
+.ds-prop-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--button-bg);
+}
+
+.ds-prop-row .ds-range-val {
+  font-size: 0.78em;
+  min-width: 34px;
+  text-align: right;
+  color: var(--text-color);
+  opacity: 0.6;
+}
+
+.ds-prop-row select {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--input-text);
+  font-size: 0.85em;
+}
+
+/* ── Text Format Bar ── */
+.ds-text-format {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ds-fmt-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85em;
+  font-weight: 700;
+  transition: all 0.12s;
+}
+
+.ds-fmt-btn:hover {
+  border-color: var(--button-bg);
+}
+
+.ds-fmt-btn.active {
+  background: var(--button-bg);
+  color: var(--button-text);
+  border-color: var(--button-bg);
+}
+
+.ds-align-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.ds-align-btn {
+  flex: 1;
+  height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+
+.ds-align-btn:hover {
+  border-color: var(--button-bg);
+}
+
+.ds-align-btn.active {
+  background: var(--button-bg);
+  color: var(--button-text);
+  border-color: var(--button-bg);
+}
+
+/* ── Layer Buttons ── */
+.ds-layer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.ds-layer-btn {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.78em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.ds-layer-btn:hover {
+  border-color: var(--button-bg);
+  background: var(--card-bg);
+}
+
+/* ── Object Action Buttons ── */
+.ds-obj-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ds-obj-action-btn {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.82em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ds-delete-btn {
+  background: var(--danger-color);
+  color: #fff;
+}
+
+.ds-delete-btn:hover {
+  opacity: 0.85;
+}
+
+.ds-duplicate-btn {
+  background: var(--border-color);
+  color: var(--text-color);
+}
+
+.ds-duplicate-btn:hover {
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+
+.ds-removebg-btn {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-weight: 600;
+  font-size: 0.82em;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 8px;
+}
+
+.ds-removebg-btn:hover {
+  border-color: var(--button-bg);
+}
+
+/* ── Layers Panel ── */
+.ds-layers-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.4;
+  font-size: 0.88em;
+}
+
+.ds-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 0.85em;
+  color: var(--text-color);
+}
+
+.ds-layer-item:hover {
+  background: var(--bg-color);
+}
+
+.ds-layer-item.active {
+  background: color-mix(in srgb, var(--button-bg) 15%, transparent);
+  border-left: 3px solid var(--button-bg);
+}
+
+.ds-layer-vis,
+.ds-layer-lock {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.ds-layer-vis:hover,
+.ds-layer-lock:hover {
+  background: var(--border-color);
+  opacity: 1;
+}
+
+.ds-layer-vis.off {
+  opacity: 0.25;
+}
+
+.ds-layer-lock.on {
+  color: var(--warning-color);
+  opacity: 0.8;
+}
+
+.ds-layer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ds-layer-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.4;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .ds-sidebar-left,
+  .ds-sidebar-right {
+    width: 220px;
+    min-width: 220px;
+  }
+
+  .ds-icon-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .ds-sidebar-right {
+    display: none;
+  }
+
+  .ds-sidebar-left {
+    width: 200px;
+    min-width: 200px;
+  }
+
+  .ds-toolbar-center {
+    display: none;
+  }
+}
